@@ -1,245 +1,194 @@
+// Dosya Adı: home_screen.dart
+// Açıklama: RetailEX tarzı Home Dashboard - Header + Stat kartları + Modül grid
+// Geliştirici: Ferhat NAS
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/constants/app_constants.dart';
+import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
-import '../../../tables/presentation/screens/tables_screen.dart';
-import '../../../orders/presentation/screens/orders_screen.dart';
-import '../../../reports/presentation/screens/reports_screen.dart';
-import '../../../admin/presentation/screens/admin_screen.dart';
+import '../../../../core/localization/app_localizations.dart';
+import '../../../../services/postgres_service.dart';
 import '../../../../screens/postgres_settings_screen.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final width = MediaQuery.of(context).size.width;
-    final isMobile = width < 600;
-    final isTablet = width >= 600 && width < 1100;
-    int crossAxisCount = isMobile
-        ? 2
-        : isTablet
-            ? 3
-            : 6;
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
 
-    final String today = DateFormat('d MMMM', 'tr_TR').format(DateTime.now());
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  int _occupiedTables = 0;
+  int _availableTables = 0;
+  int _totalTables = 0;
 
-    // Kart renkleri ve ikonlar yedekten alındı
-    final List<Color> cardColors = [
-      Color(0xFFFF5252),
-      Color(0xFF448AFF),
-      Color(0xFF00E676),
-      Color(0xFFFF7043),
-      Color(0xFFAB47BC),
-      Color(0xFFFF4081),
-      Color(0xFF1DE9B6),
-      Color(0xFF1976D2),
-      Color(0xFF536DFE),
-      Color(0xFF69F0AE),
-      Color(0xFF90CAF9),
-      Color(0xFF7C4DFF),
-    ];
-    final List<IconData> icons = [
-      Icons.phone_iphone,
-      Icons.receipt_long,
-      Icons.bar_chart,
-      Icons.compare_arrows,
-      Icons.inventory,
-      Icons.settings,
-      Icons.admin_panel_settings,
-      Icons.directions_car,
-      Icons.monitor,
-      Icons.insert_chart,
-      Icons.storage,
-      Icons.account_balance,
-    ];
-    final List<String> labels = [
-      'Servis',
-      'Paket Servis',
-      'Self Servis',
-      'Mobil Servis',
-      'Siparişler',
-      'Akıllı Masa',
-      'Raporlar',
-      'Trafik',
-      'Muhasebe',
-      'PostgreSQL',
-      'Yönetim',
-      'Monitör',
-    ];
-    double childAspectRatio = isMobile ? 1.2 : 1;
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    try {
+      final pg = PostgresService();
+      if (!pg.isConnected) await pg.initialize();
+      final tables = await pg.getTables();
+      if (mounted) {
+        setState(() {
+          _totalTables = tables.length;
+          _occupiedTables = tables
+              .where((t) => t['status'] != 'empty' && t['status'] != null)
+              .length;
+          _availableTables = _totalTables - _occupiedTables;
+        });
+      }
+    } catch (e) {
+      // silently handle
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider);
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
-      appBar: AppBar(
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back),
-          onPressed: () => Navigator.maybePop(context),
-        ),
-        title: const Text('EXFIN REST',
-            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-        backgroundColor: AppConstants.exfinRed,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        centerTitle: false,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: 'PostgreSQL Ayarları',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const PostgresSettingsScreen(),
-                ),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.light_mode),
-            tooltip: 'Tema',
-            onPressed: () {},
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Çıkış Yap',
-            onPressed: () {
-              Navigator.of(context).pushReplacementNamed('/login');
-            },
-          ),
+      backgroundColor: const Color(0xFFF0F2F5),
+      body: Column(
+        children: [
+          _buildHeader(lang),
+          _buildStatCards(lang),
+          Expanded(child: _buildModuleGrid(lang)),
         ],
-      ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _buildInfoCardsRow(isMobile, today),
-              const SizedBox(height: 24),
-              Expanded(
-                child: GridView.builder(
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 18,
-                    mainAxisSpacing: 18,
-                    childAspectRatio: childAspectRatio,
-                  ),
-                  itemCount: labels.length,
-                  itemBuilder: (context, i) {
-                    final color = cardColors[i % cardColors.length];
-                    return _buildMenuCard(
-                      icons[i],
-                      labels[i],
-                      color,
-                      onTap: () {
-                        switch (labels[i]) {
-                          case 'Servis':
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const TablesScreen(),
-                              ),
-                            );
-                            break;
-                          case 'Siparişler':
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const OrdersScreen(),
-                              ),
-                            );
-                            break;
-                          case 'Raporlar':
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const ReportsScreen(),
-                              ),
-                            );
-                            break;
-                          case 'Self Servis':
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const OrdersScreen(),
-                                settings:
-                                    RouteSettings(arguments: 'SelfServis'),
-                              ),
-                            );
-                            break;
-                          case 'Yönetim':
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const AdminScreen(),
-                              ),
-                            );
-                            break;
-                          case 'PostgreSQL':
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const PostgresSettingsScreen(),
-                              ),
-                            );
-                            break;
-                          default:
-                            // Diğer kartlar için şimdilik bir şey yapma
-                            break;
-                        }
-                      },
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
 
-  Widget _buildInfoCardsRow(bool isMobile, String today) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
+  Widget _buildHeader(AppLanguage lang) {
+    final today = DateFormat('dd.MM.yyyy').format(DateTime.now());
+
+    return Container(
+      padding: EdgeInsets.only(
+        top: MediaQuery.of(context).padding.top + 8,
+        left: 16,
+        right: 16,
+        bottom: 10,
+      ),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF1E40AF), Color(0xFF3B82F6)],
+        ),
+      ),
       child: Row(
         children: [
-          SizedBox(
-            width: isMobile ? 120 : 150,
-            child: _modernInfoCard(
-              gradient: const LinearGradient(
-                  colors: [Color(0xFFFE5B5B), Color(0xFFFF8C8C)]),
-              icon: Icons.event_seat,
-              iconBg: Colors.white.withValues(alpha: 0.08),
-              title: '24 Dolu',
-              subtitle: 'Masa bilgisi',
-              compact: isMobile,
+          const Text.rich(
+            TextSpan(children: [
+              TextSpan(
+                text: 'Rest',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+              TextSpan(
+                text: 'Ex',
+                style: TextStyle(
+                  color: Color(0xFFFF6B35),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ]),
+          ),
+          const Spacer(),
+          _headerInfo(Icons.table_restaurant_outlined,
+              '$_totalTables ${L.get('tables', lang)}'),
+          const SizedBox(width: 16),
+          _headerInfo(Icons.notifications_none,
+              '${L.get('waiter_request', lang)}: 0'),
+          const SizedBox(width: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEF4444).withValues(alpha: 0.9),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${L.get('fiscal_day', lang)}\n$today',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: isMobile ? 120 : 150,
-            child: _modernInfoCard(
-              gradient: const LinearGradient(
-                  colors: [Color(0xFF4F8CFF), Color(0xFF8CC6FF)]),
-              icon: Icons.event_seat,
-              iconBg: Colors.white.withValues(alpha: 0.08),
-              title: '49 Boş',
-              subtitle: 'Masa bilgisi',
-              compact: isMobile,
+          const SizedBox(width: 12),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined, color: Colors.white70),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const PostgresSettingsScreen()),
             ),
           ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: isMobile ? 120 : 150,
-            child: _modernInfoCard(
-              gradient: const LinearGradient(
-                  colors: [Color(0xFFFF5B9E), Color(0xFFFFB6D5)]),
-              icon: Icons.calendar_today,
-              iconBg: Colors.white.withValues(alpha: 0.08),
-              title: today,
-              subtitle: 'Gün bilgisi',
-              compact: isMobile,
+          IconButton(
+            icon: const Icon(Icons.logout_outlined, color: Colors.white70),
+            onPressed: () => context.go('/login'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _headerInfo(IconData icon, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: Colors.white70, size: 16),
+        const SizedBox(width: 4),
+        Text(text,
+            style: const TextStyle(color: Colors.white70, fontSize: 12)),
+      ],
+    );
+  }
+
+  Widget _buildStatCards(AppLanguage lang) {
+    return SizedBox(
+      height: 72,
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: _statCard(
+              color: const Color(0xFFEF4444),
+              icon: Icons.close,
+              value: '$_occupiedTables',
+              label: L.get('occupied', lang),
+              sublabel: L.get('table_status', lang),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: _statCard(
+              color: const Color(0xFF2563EB),
+              icon: Icons.grid_view_rounded,
+              value: '$_availableTables',
+              label: L.get('available', lang),
+              sublabel: L.get('available_table', lang),
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: _statCard(
+              color: const Color(0xFF10B981),
+              icon: Icons.access_time,
+              value: L.get('close_day', lang),
+              label: '',
+              sublabel:
+                  '${L.get('fiscal_day', lang)} (${DateFormat('dd.MM.yyyy').format(DateTime.now())})',
             ),
           ),
         ],
@@ -247,67 +196,42 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _modernInfoCard({
-    required LinearGradient gradient,
+  Widget _statCard({
+    required Color color,
     required IconData icon,
-    required Color iconBg,
-    required String title,
-    required String subtitle,
-    bool fullWidth = false,
-    bool compact = false,
+    required String value,
+    required String label,
+    required String sublabel,
   }) {
     return Container(
-      width: fullWidth ? double.infinity : null,
-      height: compact ? 60 : 90,
-      margin: const EdgeInsets.symmetric(horizontal: 2),
-      decoration: BoxDecoration(
-        gradient: gradient,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Stack(
+      margin: const EdgeInsets.symmetric(horizontal: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: color,
+      child: Row(
         children: [
-          Positioned(
-            right: 12,
-            bottom: 8,
-            child: Icon(
-              icon,
-              size: compact ? 32 : 54,
-              color: iconBg,
-            ),
-          ),
-          Padding(
-            padding: EdgeInsets.symmetric(
-                horizontal: compact ? 10 : 18, vertical: compact ? 8 : 16),
+          Icon(icon, color: Colors.white, size: 28),
+          const SizedBox(width: 10),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  title,
-                  style: TextStyle(
+                  value,
+                  style: const TextStyle(
                     color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: compact ? 15 : 22,
-                    letterSpacing: 0.5,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: compact ? 10 : 14,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: 0.2,
-                  ),
-                ),
+                if (label.isNotEmpty)
+                  Text(label,
+                      style: const TextStyle(
+                          color: Colors.white70, fontSize: 11)),
+                Text(sublabel,
+                    style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 9)),
               ],
             ),
           ),
@@ -316,72 +240,107 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildMenuCard(IconData icon, String label, Color bgColor,
-      {VoidCallback? onTap}) {
-    final width = WidgetsBinding
-            .instance.platformDispatcher.views.first.physicalSize.width /
-        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
-    final isMobile = width < 600;
-    final isTablet = width >= 600 && width < 1100;
-    double iconSize = isMobile
-        ? 32
-        : isTablet
-            ? 38
-            : 44;
-    double circleSize = isMobile
-        ? 48
-        : isTablet
-            ? 56
-            : 64;
-    final bool isLight =
-        ThemeData.estimateBrightnessForColor(bgColor) == Brightness.light;
-    final textColor = isLight ? Colors.black87 : Colors.white;
-    return Container(
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300, width: 1),
+  Widget _buildModuleGrid(AppLanguage lang) {
+    final modules = [
+      _ModuleTile(L.get('service', lang), Icons.restaurant,
+          const Color(0xFFEF4444), '/tables'),
+      _ModuleTile(L.get('package_service', lang), Icons.delivery_dining,
+          const Color(0xFF3B82F6), null),
+      _ModuleTile(L.get('retail', lang), Icons.shopping_cart_outlined,
+          const Color(0xFF10B981), '/retail'),
+      _ModuleTile(L.get('takeaway', lang), Icons.takeout_dining,
+          const Color(0xFFF59E0B), null),
+      _ModuleTile(L.get('self_service', lang), Icons.self_improvement,
+          const Color(0xFF8B5CF6), null),
+      _ModuleTile(L.get('orders', lang), Icons.receipt_long_outlined,
+          const Color(0xFF06B6D4), '/orders'),
+      _ModuleTile(L.get('void_report', lang), Icons.assignment_return,
+          const Color(0xFFDC2626), null),
+      _ModuleTile(L.get('product_qty', lang), Icons.bar_chart,
+          const Color(0xFF7C3AED), null),
+      _ModuleTile(L.get('reservations', lang), Icons.calendar_month,
+          const Color(0xFFF43F5E), null),
+      _ModuleTile(L.get('customers', lang), Icons.people_outline,
+          const Color(0xFF059669), null),
+      _ModuleTile(L.get('reports', lang), Icons.analytics_outlined,
+          const Color(0xFF6366F1), '/reports'),
+      _ModuleTile(L.get('stock', lang), Icons.inventory_2_outlined,
+          const Color(0xFF64748B), null),
+      _ModuleTile(L.get('cash', lang), Icons.point_of_sale,
+          const Color(0xFFFB923C), null),
+      _ModuleTile(L.get('smart_table', lang), Icons.monitor_outlined,
+          const Color(0xFF0EA5E9), '/tables'),
+      _ModuleTile(L.get('kitchen', lang), Icons.soup_kitchen_outlined,
+          const Color(0xFFEC4899), '/kitchen'),
+      _ModuleTile(L.get('recipes', lang), Icons.menu_book_outlined,
+          const Color(0xFF475569), null),
+      _ModuleTile(L.get('settings', lang), Icons.settings_outlined,
+          const Color(0xFF0F172A), null),
+      _ModuleTile(L.get('management', lang), Icons.apps,
+          const Color(0xFFD946EF), '/admin'),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: GridView.builder(
+        itemCount: modules.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: _getCrossAxisCount(context),
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 1.1,
+        ),
+        itemBuilder: (context, index) {
+          final m = modules[index];
+          return _buildTile(m);
+        },
       ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: circleSize,
-                  height: circleSize,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(icon, color: Colors.white, size: iconSize),
-                ),
-                const SizedBox(height: 12),
-                Flexible(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      color: textColor,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                      letterSpacing: 0.1,
-                    ),
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 2,
-                  ),
-                ),
-              ],
+    );
+  }
+
+  int _getCrossAxisCount(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    if (width > 1400) return 6;
+    if (width > 1100) return 5;
+    if (width > 800) return 4;
+    if (width > 500) return 3;
+    return 2;
+  }
+
+  Widget _buildTile(_ModuleTile m) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      elevation: 1,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: m.route != null ? () => context.go(m.route!) : null,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(m.icon, size: 36, color: m.color),
+            const SizedBox(height: 8),
+            Text(
+              m.label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF374151),
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _ModuleTile {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final String? route;
+
+  _ModuleTile(this.label, this.icon, this.color, this.route);
 }
