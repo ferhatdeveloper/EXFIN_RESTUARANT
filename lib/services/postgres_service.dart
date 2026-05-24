@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:postgres/postgres.dart';
 import 'package:logger/logger.dart';
-import 'database_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class PostgresService {
   static final PostgresService _instance = PostgresService._internal();
@@ -10,30 +10,29 @@ class PostgresService {
 
   PostgreSQLConnection? _connection;
   final Logger _logger = Logger();
-  final DatabaseService _dbService = DatabaseService();
 
   bool _isConnected = false;
   bool get isConnected => _isConnected;
 
+  String get _host => dotenv.env['PG_HOST'] ?? 'localhost';
+  int get _port => int.tryParse(dotenv.env['PG_PORT'] ?? '5432') ?? 5432;
+  String get _database => dotenv.env['PG_DATABASE'] ?? 'exfin_db';
+  String get _username => dotenv.env['PG_USERNAME'] ?? 'postgres';
+  String get _password => dotenv.env['PG_PASSWORD'] ?? 'Yq7xwQpt6c';
+  String get _firmNr => dotenv.env['FIRM_NR'] ?? '001';
+
   Future<bool> initialize() async {
     try {
-      // SQLite'dan PostgreSQL ayarlarını al
-      final settings = await _dbService.getPostgresSettings();
-      if (settings == null) {
-        _logger.e('PostgreSQL ayarları bulunamadı');
-        return false;
-      }
+      if (_isConnected && _connection != null) return true;
 
-      _logger.i(
-          'PostgreSQL ayarları alındı: ${settings['host']}:${settings['port']}');
+      _logger.i('PostgreSQL bağlanıyor: $_host:$_port/$_database');
 
-      // Gerçek PostgreSQL bağlantısı
       _connection = PostgreSQLConnection(
-        settings['host'],
-        settings['port'],
-        settings['database'],
-        username: settings['username'],
-        password: settings['password'],
+        _host,
+        _port,
+        _database,
+        username: _username,
+        password: _password,
       );
 
       await _connection!.open();
@@ -114,25 +113,24 @@ class PostgresService {
       }
 
       final results = await _connection!.query('''
-        SELECT id, username, password, role, is_active, email, first_name, last_name, phone, created_at, updated_at
-        FROM users
+        SELECT id, username, full_name, role, is_active, email, phone, firm_nr, created_at, updated_at
+        FROM public.users
         WHERE is_active = true
         ORDER BY username
       ''');
 
       return results
           .map((row) => {
-                'id': row[0],
+                'id': row[0]?.toString(),
                 'username': row[1],
-                'password': row[2],
+                'fullName': row[2],
                 'role': row[3],
                 'isActive': row[4],
                 'email': row[5],
-                'firstName': row[6],
-                'lastName': row[7],
-                'phone': row[8],
-                'createdAt': row[9]?.toString(),
-                'updatedAt': row[10]?.toString(),
+                'phone': row[6],
+                'firmNr': row[7],
+                'createdAt': row[8]?.toString(),
+                'updatedAt': row[9]?.toString(),
               })
           .toList();
     } catch (e) {
@@ -149,25 +147,33 @@ class PostgresService {
       }
 
       final results = await _connection!.query('''
-        SELECT id, username, password, role, is_active, email, first_name, last_name
-        FROM users
-        WHERE username = @username AND password = @password AND is_active = true
+        SELECT id, username, email, full_name, firm_nr, store_id,
+               role_id, role_name, role_permissions, role_color, role_landing_route,
+               allowed_firm_nrs, allowed_periods, created_at
+        FROM logic.verify_login(@username, @password, @firmNr)
       ''', substitutionValues: {
         'username': username,
         'password': password,
+        'firmNr': _firmNr,
       });
 
       if (results.isNotEmpty) {
         final user = results.first;
         return {
-          'id': user[0],
+          'id': user[0]?.toString(),
           'username': user[1],
-          'password': user[2],
-          'role': user[3],
-          'isActive': user[4],
-          'email': user[5],
-          'firstName': user[6],
-          'lastName': user[7],
+          'email': user[2],
+          'fullName': user[3],
+          'firmNr': user[4],
+          'storeId': user[5]?.toString(),
+          'roleId': user[6]?.toString(),
+          'roleName': user[7],
+          'rolePermissions': user[8],
+          'roleColor': user[9],
+          'roleLandingRoute': user[10],
+          'allowedFirmNrs': user[11],
+          'allowedPeriods': user[12],
+          'createdAt': user[13]?.toString(),
         };
       }
       return null;
@@ -188,26 +194,31 @@ class PostgresService {
       }
 
       final results = await _connection!.query('''
-        SELECT t.id, t.name, t.capacity, t.status, t.location, t.is_active, 
-               t.created_at, t.updated_at, r.name as region_name, r.id as region_id
-        FROM tables t
-        LEFT JOIN regions r ON t.region_id = r.id
-        WHERE t.is_active = true
-        ORDER BY t.name
+        SELECT t.id, t.number, t.seats, t.status, t.total, t.is_large,
+               t.pos_x, t.pos_y, t.waiter, t.staff_id, t.start_time,
+               t.color, t.updated_at, f.name as floor_name, f.id as floor_id
+        FROM rest.rex_001_rest_tables t
+        LEFT JOIN rest.floors f ON t.floor_id = f.id
+        ORDER BY f.display_order, t.number
       ''');
 
       return results
           .map((row) => {
-                'id': row[0],
+                'id': row[0]?.toString(),
                 'name': row[1],
                 'capacity': row[2],
                 'status': row[3],
-                'location': row[4],
-                'isActive': row[5],
-                'createdAt': row[6]?.toString(),
-                'updatedAt': row[7]?.toString(),
-                'regionName': row[8],
-                'regionId': row[9],
+                'total': row[4],
+                'isLarge': row[5],
+                'posX': row[6],
+                'posY': row[7],
+                'waiter': row[8],
+                'staffId': row[9]?.toString(),
+                'startTime': row[10]?.toString(),
+                'color': row[11],
+                'updatedAt': row[12]?.toString(),
+                'regionName': row[13],
+                'regionId': row[14]?.toString(),
               })
           .toList();
     } catch (e) {
@@ -223,20 +234,18 @@ class PostgresService {
       }
 
       final results = await _connection!.query('''
-        SELECT id, name, description, is_active, created_at, updated_at
-        FROM regions
-        WHERE is_active = true
-        ORDER BY name
+        SELECT id, name, color, display_order, created_at
+        FROM rest.floors
+        ORDER BY display_order
       ''');
 
       return results
           .map((row) => {
-                'id': row[0],
+                'id': row[0]?.toString(),
                 'name': row[1],
                 'description': row[2],
-                'isActive': row[3],
+                'isActive': true,
                 'createdAt': row[4]?.toString(),
-                'updatedAt': row[5]?.toString(),
               })
           .toList();
     } catch (e) {

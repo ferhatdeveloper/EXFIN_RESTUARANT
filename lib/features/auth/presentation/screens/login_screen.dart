@@ -38,46 +38,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       icon: Icons.shield_outlined,
       color: Color(0xFFE53935),
     ),
-    _StaffMember(
-      username: 'manager',
-      password: 'password',
-      role: 'manager',
-      displayName: 'Müdür',
-      icon: Icons.manage_accounts_outlined,
-      color: Color(0xFF1E88E5),
-    ),
-    _StaffMember(
-      username: 'cashier',
-      password: 'password',
-      role: 'cashier',
-      displayName: 'Kasiyer',
-      icon: Icons.point_of_sale_outlined,
-      color: Color(0xFF00897B),
-    ),
-    _StaffMember(
-      username: 'waiter',
-      password: 'password',
-      role: 'waiter',
-      displayName: 'Garson',
-      icon: Icons.room_service_outlined,
-      color: Color(0xFFF4511E),
-    ),
-    _StaffMember(
-      username: 'kitchen',
-      password: 'password',
-      role: 'kitchen',
-      displayName: 'Mutfak',
-      icon: Icons.soup_kitchen_outlined,
-      color: Color(0xFF8E24AA),
-    ),
-    _StaffMember(
-      username: 'guest',
-      password: 'password',
-      role: 'guest',
-      displayName: 'Misafir',
-      icon: Icons.person_outline,
-      color: Color(0xFF546E7A),
-    ),
   ];
 
   @override
