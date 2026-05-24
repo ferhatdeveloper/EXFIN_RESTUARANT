@@ -16,6 +16,8 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
   final _databaseController = TextEditingController();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _postgrestUrlController = TextEditingController();
+  final _postgrestSchemaController = TextEditingController();
 
   bool _isLoading = false;
   bool _isConnected = false;
@@ -34,6 +36,8 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
     _databaseController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _postgrestUrlController.dispose();
+    _postgrestSchemaController.dispose();
     super.dispose();
   }
 
@@ -49,6 +53,10 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
           _databaseController.text = settings['database'] ?? '';
           _usernameController.text = settings['username'] ?? '';
           _passwordController.text = settings['password'] ?? '';
+          _postgrestUrlController.text =
+              settings['postgrestUrl'] ?? 'http://localhost:3002';
+          _postgrestSchemaController.text =
+              settings['postgrestSchema'] ?? 'public';
         });
       }
     } catch (e) {
@@ -68,6 +76,8 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
         'database': _databaseController.text.trim(),
         'username': _usernameController.text.trim(),
         'password': _passwordController.text.trim(),
+        'postgrestUrl': _postgrestUrlController.text.trim(),
+        'postgrestSchema': _postgrestSchemaController.text.trim(),
       };
 
       final dbService = DatabaseService();
@@ -77,6 +87,8 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
         database: settings['database'] as String,
         username: settings['username'] as String,
         password: settings['password'] as String,
+        postgrestUrl: settings['postgrestUrl'] as String,
+        postgrestSchema: settings['postgrestSchema'] as String,
       );
 
       if (mounted) {
@@ -104,9 +116,22 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
   }
 
   Future<void> _testConnection() async {
+    if (!_formKey.currentState!.validate()) return;
+
     setState(() => _isLoading = true);
 
     try {
+      final dbService = DatabaseService();
+      await dbService.updatePostgresSettings(
+        host: _hostController.text.trim(),
+        port: int.tryParse(_portController.text.trim()) ?? 5432,
+        database: _databaseController.text.trim(),
+        username: _usernameController.text.trim(),
+        password: _passwordController.text.trim(),
+        postgrestUrl: _postgrestUrlController.text.trim(),
+        postgrestSchema: _postgrestSchemaController.text.trim(),
+      );
+
       final postgresService = PostgresService();
       final isConnected = await postgresService.testConnection();
 
@@ -302,6 +327,42 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
                             return 'Şifre gerekli';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      TextFormField(
+                        controller: _postgrestUrlController,
+                        decoration: const InputDecoration(
+                          labelText: 'PostgREST URL',
+                          hintText: 'http://localhost:3002',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'PostgREST URL gerekli';
+                          }
+                          final uri = Uri.tryParse(value.trim());
+                          if (uri == null || !uri.hasScheme || !uri.hasAuthority) {
+                            return 'Geçerli bir URL girin';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+
+                      TextFormField(
+                        controller: _postgrestSchemaController,
+                        decoration: const InputDecoration(
+                          labelText: 'PostgREST Şeması',
+                          hintText: 'public',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'PostgREST şeması gerekli';
                           }
                           return null;
                         },

@@ -34,7 +34,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -64,6 +64,9 @@ class DatabaseService {
         database TEXT NOT NULL,
         username TEXT NOT NULL,
         password TEXT NOT NULL,
+        postgrest_url TEXT NOT NULL,
+        postgrest_schema TEXT NOT NULL DEFAULT 'public',
+        postgrest_anon_key TEXT,
         useSSL INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT
@@ -83,7 +86,7 @@ class DatabaseService {
 
     // Varsayılan API ayarlarını ekle
     await db.insert('api_settings', {
-      'base_url': 'http://localhost:5000/api',
+      'base_url': 'http://localhost:3002',
       'username': 'admin',
       'password': 'admin123',
       'token': '',
@@ -98,7 +101,10 @@ class DatabaseService {
       'port': 5432,
       'database': 'exfin_db',
       'username': 'postgres',
-      'password': 'Yq7xwQpt6c',
+      'password': 'postgres',
+      'postgrest_url': 'http://localhost:3002',
+      'postgrest_schema': 'public',
+      'postgrest_anon_key': '',
       'useSSL': 0,
       'created_at': DateTime.now().toIso8601String(),
     });
@@ -116,6 +122,9 @@ class DatabaseService {
             database TEXT NOT NULL,
             username TEXT NOT NULL,
             password TEXT NOT NULL,
+            postgrest_url TEXT NOT NULL,
+            postgrest_schema TEXT NOT NULL DEFAULT 'public',
+            postgrest_anon_key TEXT,
             useSSL INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
             updated_at TEXT
@@ -128,7 +137,10 @@ class DatabaseService {
           'port': 5432,
           'database': 'exfin_db',
           'username': 'postgres',
-          'password': 'Yq7xwQpt6c',
+          'password': 'postgres',
+          'postgrest_url': 'http://localhost:3002',
+          'postgrest_schema': 'public',
+          'postgrest_anon_key': '',
           'useSSL': 0,
           'created_at': DateTime.now().toIso8601String(),
         });
@@ -136,6 +148,27 @@ class DatabaseService {
         // Tablo zaten varsa hata verme
         print('PostgreSQL settings table already exists: $e');
       }
+    }
+
+    // PostgREST ayar kolonlarını ekle
+    if (oldVersion < 3) {
+      try {
+        await db.execute(
+          "ALTER TABLE postgres_settings ADD COLUMN postgrest_url TEXT NOT NULL DEFAULT 'http://localhost:3002'",
+        );
+      } catch (_) {}
+
+      try {
+        await db.execute(
+          "ALTER TABLE postgres_settings ADD COLUMN postgrest_schema TEXT NOT NULL DEFAULT 'public'",
+        );
+      } catch (_) {}
+
+      try {
+        await db.execute(
+          'ALTER TABLE postgres_settings ADD COLUMN postgrest_anon_key TEXT',
+        );
+      } catch (_) {}
     }
   }
 
@@ -415,6 +448,9 @@ class DatabaseService {
     required String database,
     required String username,
     required String password,
+    String postgrestUrl = 'http://localhost:3002',
+    String postgrestSchema = 'public',
+    String? postgrestAnonKey,
     bool useSSL = false,
   }) async {
     final db = await this.database;
@@ -426,6 +462,9 @@ class DatabaseService {
           'database': database,
           'username': username,
           'password': password,
+          'postgrest_url': postgrestUrl,
+          'postgrest_schema': postgrestSchema,
+          'postgrest_anon_key': postgrestAnonKey ?? '',
           'useSSL': useSSL ? 1 : 0,
           'created_at': DateTime.now().toIso8601String(),
         },
@@ -448,6 +487,10 @@ class DatabaseService {
         'database': results.first['database'],
         'username': results.first['username'],
         'password': results.first['password'],
+        'postgrestUrl':
+            results.first['postgrest_url'] ?? 'http://localhost:3002',
+        'postgrestSchema': results.first['postgrest_schema'] ?? 'public',
+        'postgrestAnonKey': results.first['postgrest_anon_key'] ?? '',
         'useSSL': results.first['useSSL'] == 1,
       };
     }
@@ -461,6 +504,9 @@ class DatabaseService {
     required String database,
     required String username,
     required String password,
+    String postgrestUrl = 'http://localhost:3002',
+    String postgrestSchema = 'public',
+    String? postgrestAnonKey,
     bool useSSL = false,
   }) async {
     final db = await this.database;
@@ -472,6 +518,9 @@ class DatabaseService {
         'database': database,
         'username': username,
         'password': password,
+        'postgrest_url': postgrestUrl,
+        'postgrest_schema': postgrestSchema,
+        'postgrest_anon_key': postgrestAnonKey ?? '',
         'useSSL': useSSL ? 1 : 0,
         'updated_at': DateTime.now().toIso8601String(),
       },
@@ -487,6 +536,9 @@ class DatabaseService {
     required String database,
     required String username,
     required String password,
+    String postgrestUrl = 'http://localhost:3002',
+    String postgrestSchema = 'public',
+    String? postgrestAnonKey,
     bool useSSL = false,
   }) async {
     try {
@@ -497,6 +549,9 @@ class DatabaseService {
         database: database,
         username: username,
         password: password,
+        postgrestUrl: postgrestUrl,
+        postgrestSchema: postgrestSchema,
+        postgrestAnonKey: postgrestAnonKey,
         useSSL: useSSL,
       );
       return true;
