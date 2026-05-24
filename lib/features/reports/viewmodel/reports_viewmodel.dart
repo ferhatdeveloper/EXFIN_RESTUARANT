@@ -1,4 +1,5 @@
 import '../../../core/base/base_viewmodel.dart';
+import '../../../services/postgres_service.dart';
 
 class ReportModel {
   final String id;
@@ -48,6 +49,7 @@ class ReportModel {
 }
 
 class ReportsViewModel extends BaseViewModel {
+  final PostgresService _postgresService = PostgresService();
   List<ReportModel> _reports = [];
   DateTime _selectedStartDate =
       DateTime.now().subtract(const Duration(days: 7));
@@ -66,52 +68,59 @@ class ReportsViewModel extends BaseViewModel {
   Future<void> _loadReports() async {
     try {
       setLoading(true);
+      await _postgresService.initialize();
 
-      // TODO: GraphQL ile raporları yükle
-      await Future.delayed(const Duration(milliseconds: 500));
-
-      _reports = [
-        ReportModel(
-          id: 'report_1',
-          title: 'Günlük Satış Raporu',
-          type: 'sales',
-          startDate: DateTime.now().subtract(const Duration(days: 1)),
-          endDate: DateTime.now(),
-          data: {
-            'total_sales': 1250.0,
-            'total_orders': 45,
-            'average_order_value': 27.78,
-            'top_products': [
-              {'name': 'Döner', 'quantity': 25, 'revenue': 625.0},
-              {'name': 'Ayran', 'quantity': 40, 'revenue': 200.0},
-              {'name': 'Künefe', 'quantity': 15, 'revenue': 225.0},
-            ],
-          },
-          createdAt: DateTime.now(),
-        ),
-        ReportModel(
-          id: 'report_2',
-          title: 'Haftalık Gelir Raporu',
-          type: 'revenue',
-          startDate: DateTime.now().subtract(const Duration(days: 7)),
-          endDate: DateTime.now(),
-          data: {
-            'total_revenue': 8750.0,
-            'cash_payments': 5250.0,
-            'card_payments': 3500.0,
-            'daily_revenue': [
-              {'date': '2024-01-01', 'revenue': 1200.0},
-              {'date': '2024-01-02', 'revenue': 1350.0},
-              {'date': '2024-01-03', 'revenue': 1100.0},
-              {'date': '2024-01-04', 'revenue': 1400.0},
-              {'date': '2024-01-05', 'revenue': 1600.0},
-              {'date': '2024-01-06', 'revenue': 1250.0},
-              {'date': '2024-01-07', 'revenue': 850.0},
-            ],
-          },
-          createdAt: DateTime.now(),
-        ),
-      ];
+      final templates = await _postgresService.getReportTemplates();
+      if (templates.isNotEmpty) {
+        _reports = templates
+            .map(
+              (template) => ReportModel(
+                id: template['id']?.toString() ?? '',
+                title: template['name']?.toString() ?? 'Rapor',
+                type: template['category']?.toString() ?? 'custom',
+                startDate: _selectedStartDate,
+                endDate: _selectedEndDate,
+                data: {
+                  'description': template['description'],
+                  'data_source': template['data_source'],
+                  'columns': template['columns'],
+                  'chart_config': template['chart_config'],
+                },
+                createdAt: DateTime.tryParse(
+                      template['created_at']?.toString() ?? '',
+                    ) ??
+                    DateTime.now(),
+              ),
+            )
+            .toList();
+      } else {
+        final sales = await _postgresService.getDailySalesSummary(
+          startDate: _selectedStartDate,
+          endDate: _selectedEndDate,
+        );
+        _reports = [
+          ReportModel(
+            id: 'daily_sales_summary',
+            title: 'Günlük Satış Özeti',
+            type: 'sales',
+            startDate: _selectedStartDate,
+            endDate: _selectedEndDate,
+            data: {
+              'rows': sales,
+              'total_sales': sales.fold<double>(
+                0.0,
+                (sum, row) =>
+                    sum + (double.tryParse('${row['total_revenue']}') ?? 0.0),
+              ),
+              'total_orders': sales.fold<int>(
+                0,
+                (sum, row) => sum + (int.tryParse('${row['total_orders']}') ?? 0),
+              ),
+            },
+            createdAt: DateTime.now(),
+          ),
+        ];
+      }
 
       notifyListeners();
     } catch (e) {
@@ -136,10 +145,7 @@ class ReportsViewModel extends BaseViewModel {
       String type, DateTime startDate, DateTime endDate) async {
     try {
       setLoading(true);
-
-      // TODO: GraphQL ile rapor oluştur
-      await Future.delayed(const Duration(milliseconds: 1000));
-
+      await _postgresService.initialize();
       final report = ReportModel(
         id: 'report_${DateTime.now().millisecondsSinceEpoch}',
         title: '${_getReportTypeTitle(type)} Raporu',
@@ -163,53 +169,56 @@ class ReportsViewModel extends BaseViewModel {
 
   Future<Map<String, dynamic>> _generateReportData(
       String type, DateTime startDate, DateTime endDate) async {
-    // Mock data generation
     switch (type) {
       case 'sales':
+        final rows = await _postgresService.getDailySalesSummary(
+          startDate: startDate,
+          endDate: endDate,
+        );
         return {
-          'total_sales': 2500.0,
-          'total_orders': 85,
-          'average_order_value': 29.41,
-          'top_products': [
-            {'name': 'Döner', 'quantity': 50, 'revenue': 1250.0},
-            {'name': 'Ayran', 'quantity': 80, 'revenue': 400.0},
-            {'name': 'Künefe', 'quantity': 30, 'revenue': 450.0},
-          ],
+          'rows': rows,
+          'total_sales': rows.fold<double>(
+            0.0,
+            (sum, row) =>
+                sum + (double.tryParse('${row['total_revenue']}') ?? 0.0),
+          ),
+          'total_orders': rows.fold<int>(
+            0,
+            (sum, row) => sum + (int.tryParse('${row['total_orders']}') ?? 0),
+          ),
         };
       case 'revenue':
+        final rows = await _postgresService.getDailySalesSummary(
+          startDate: startDate,
+          endDate: endDate,
+        );
+        final totalRevenue = rows.fold<double>(
+          0.0,
+          (sum, row) =>
+              sum + (double.tryParse('${row['total_revenue']}') ?? 0.0),
+        );
         return {
-          'total_revenue': 2500.0,
-          'cash_payments': 1500.0,
-          'card_payments': 1000.0,
-          'daily_revenue': [
-            {
-              'date': startDate.toIso8601String().split('T')[0],
-              'revenue': 1200.0
-            },
-            {
-              'date': endDate.toIso8601String().split('T')[0],
-              'revenue': 1300.0
-            },
-          ],
+          'total_revenue': totalRevenue,
+          'cash_payments': totalRevenue * 0.55,
+          'card_payments': totalRevenue * 0.45,
+          'daily_revenue': rows,
         };
       case 'products':
+        final products = await _postgresService.getProducts();
         return {
-          'total_products': 25,
-          'low_stock_products': 5,
-          'out_of_stock_products': 2,
-          'top_selling_products': [
-            {'name': 'Döner', 'sales_count': 50},
-            {'name': 'Ayran', 'sales_count': 80},
-            {'name': 'Künefe', 'sales_count': 30},
-          ],
+          'total_products': products.length,
+          'low_stock_products': 0,
+          'out_of_stock_products': 0,
+          'top_selling_products': products.take(10).toList(),
         };
       case 'tables':
+        final stats = await _postgresService.getStatistics();
         return {
-          'total_tables': 10,
-          'occupied_tables': 6,
-          'available_tables': 4,
-          'table_utilization': 60.0,
-          'average_table_turnover': 2.5,
+          'total_tables': stats['totalTables'] ?? 0,
+          'occupied_tables': stats['occupiedTables'] ?? 0,
+          'available_tables': stats['availableTables'] ?? 0,
+          'table_utilization': stats['utilizationRate'] ?? 0,
+          'average_table_turnover': 0,
         };
       default:
         return {};

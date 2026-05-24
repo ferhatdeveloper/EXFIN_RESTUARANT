@@ -6,8 +6,8 @@ Bu klasör, EXFIN_REST restoran yönetim sisteminin Flutter frontend uygulaması
 
 - **Framework**: Flutter 3.16+
 - **State Management**: Riverpod
-- **GraphQL**: GraphQL Flutter
-- **HTTP Client**: Dio
+- **API**: PostgREST (PostgreSQL REST)
+- **HTTP Client**: http
 - **Local Storage**: Shared Preferences
 - **UI Components**: Material Design 3
 - **Package Name**: `com.exfin.exfin_rest`
@@ -50,6 +50,10 @@ Bu klasör, EXFIN_REST restoran yönetim sisteminin Flutter frontend uygulaması
    ```bash
    flutter run
    ```
+
+6. **Veritabanı şemasını kurun (PostgreSQL + PostgREST)**:
+   - `Sql/database_setup.sql`
+   - `Sql/retailex_reporting_schema.sql`
 
 ## Proje Yapısı
 
@@ -111,20 +115,20 @@ lib/
 - Stok yönetimi
 - Kullanıcı yönetimi
 
-## GraphQL Entegrasyonu
+## PostgREST Entegrasyonu
 
-### Queries
+### GET (Listeleme)
 - Kullanıcı bilgileri
 - Masa listesi
 - Ürün katalog
 - Sipariş geçmişi
 
-### Mutations
+### POST/PATCH/DELETE
 - Sipariş oluşturma
 - Sipariş güncelleme
 - Ödeme işlemi
 
-### Subscriptions
+### Real-time
 - Gerçek zamanlı sipariş güncellemeleri
 - Masa durumu değişiklikleri
 
@@ -200,9 +204,9 @@ flutter run --profile
 `.env` dosyasında aşağıdaki değişkenleri tanımlayın:
 
 ```
-API_BASE_URL=http://localhost:3000
-GRAPHQL_ENDPOINT=http://localhost:8080/v1/graphql
-HASURA_ADMIN_SECRET=exfin_admin_secret_2024
+API_BASE_URL=http://localhost:3002
+POSTGREST_URL=http://localhost:3002
+POSTGREST_SCHEMA=public
 ```
 
 ## Katkıda Bulunma

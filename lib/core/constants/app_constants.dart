@@ -31,10 +31,10 @@ class AppConstants {
   static const String userDataKey = 'user_data';
   static const String settingsKey = 'app_settings';
 
-  // API Endpoints - SQLite'dan alınacak
-  static const String defaultApiBaseUrl = 'http://localhost:5000/api';
+  // API Endpoints - PostgREST varsayılanları
+  static const String defaultApiBaseUrl = 'http://localhost:3002';
   static const String defaultSignalRHubUrl = 'http://localhost:5000/orderHub';
-  static const String defaultAuthEndpoint = '$defaultApiBaseUrl/auth';
+  static const String defaultAuthEndpoint = '$defaultApiBaseUrl/rpc';
 
   // App Configuration
   static const String appName = 'EXFIN Restaurant';

@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'package:postgres/postgres.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:logger/logger.dart';
 import 'database_service.dart';
 
@@ -8,50 +9,56 @@ class PostgresService {
   factory PostgresService() => _instance;
   PostgresService._internal();
 
-  PostgreSQLConnection? _connection;
   final Logger _logger = Logger();
   final DatabaseService _dbService = DatabaseService();
 
   bool _isConnected = false;
+  String _postgrestUrl = '';
+  String _postgrestSchema = 'public';
+  String? _postgrestAnonKey;
+
   bool get isConnected => _isConnected;
 
   Future<bool> initialize() async {
     try {
-      // SQLite'dan PostgreSQL ayarlarını al
       final settings = await _dbService.getPostgresSettings();
       if (settings == null) {
-        _logger.e('PostgreSQL ayarları bulunamadı');
+        _logger.e('PostgreSQL/PostgREST ayarları bulunamadı');
         return false;
       }
 
-      _logger.i(
-          'PostgreSQL ayarları alındı: ${settings['host']}:${settings['port']}');
+      final host = (settings['host'] ?? 'localhost').toString();
+      final postgrestUrl = (settings['postgrestUrl'] ?? '').toString().trim();
+      _postgrestUrl =
+          postgrestUrl.isNotEmpty ? postgrestUrl : 'http://$host:3002';
+      _postgrestSchema =
+          (settings['postgrestSchema'] ?? 'public').toString().trim();
+      _postgrestAnonKey = (settings['postgrestAnonKey'] ?? '').toString().trim();
 
-      // Gerçek PostgreSQL bağlantısı
-      _connection = PostgreSQLConnection(
-        settings['host'],
-        settings['port'],
-        settings['database'],
-        username: settings['username'],
-        password: settings['password'],
+      _postgrestUrl = _postgrestUrl.replaceAll(RegExp(r'/+$'), '');
+
+      _logger.i(
+        'PostgREST ayarları alındı: $_postgrestUrl (schema: $_postgrestSchema)',
       );
 
-      await _connection!.open();
-      _isConnected = true;
-      _logger.i('PostgreSQL bağlantısı başarılı');
-      return true;
+      final isHealthy = await _healthCheck();
+      _isConnected = isHealthy;
+      if (isHealthy) {
+        _logger.i('PostgREST bağlantısı başarılı');
+      } else {
+        _logger.e('PostgREST bağlantısı başarısız');
+      }
+      return isHealthy;
     } catch (e) {
-      _logger.e('PostgreSQL bağlantı hatası: $e');
+      _logger.e('PostgREST bağlantı hatası: $e');
       _isConnected = false;
       return false;
     }
   }
 
   Future<void> close() async {
-    await _connection?.close();
-    _connection = null;
     _isConnected = false;
-    _logger.i('PostgreSQL bağlantısı kapatıldı');
+    _logger.i('PostgREST bağlantısı kapatıldı');
   }
 
   Future<bool> testConnection() async {
@@ -61,9 +68,179 @@ class PostgresService {
       }
       return _isConnected;
     } catch (e) {
-      _logger.e('PostgreSQL bağlantı testi başarısız: $e');
+      _logger.e('PostgREST bağlantı testi başarısız: $e');
       return false;
     }
+  }
+
+  Uri _buildUri(String path, [Map<String, dynamic>? queryParameters]) {
+    final normalizedPath = path.startsWith('/') ? path : '/$path';
+    return Uri.parse(
+      '$_postgrestUrl$normalizedPath',
+    ).replace(
+      queryParameters: queryParameters?.map(
+        (key, value) => MapEntry(key, value.toString()),
+      ),
+    );
+  }
+
+  Map<String, String> _buildHeaders({bool preferRepresentation = false}) {
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'Accept-Profile': _postgrestSchema,
+      'Content-Profile': _postgrestSchema,
+    };
+    if ((_postgrestAnonKey ?? '').isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_postgrestAnonKey';
+    }
+    if (preferRepresentation) {
+      headers['Prefer'] = 'return=representation';
+    }
+    return headers;
+  }
+
+  Future<bool> _healthCheck() async {
+    try {
+      final response = await http.get(
+        _buildUri('/'),
+        headers: _buildHeaders(),
+      );
+      return response.statusCode >= 200 && response.statusCode < 500;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<List<dynamic>> _getList(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    final response = await http.get(
+      _buildUri(path, queryParameters),
+      headers: _buildHeaders(),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'GET $path başarısız: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    if (response.body.isEmpty) {
+      return [];
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) {
+      return decoded;
+    }
+    return [decoded];
+  }
+
+  Future<List<dynamic>> _post(
+    String path,
+    dynamic body, {
+    bool preferRepresentation = true,
+  }) async {
+    final response = await http.post(
+      _buildUri(path),
+      headers: _buildHeaders(preferRepresentation: preferRepresentation),
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'POST $path başarısız: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    if (response.body.isEmpty) {
+      return [];
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) {
+      return decoded;
+    }
+    return [decoded];
+  }
+
+  Future<List<dynamic>> _patch(
+    String path,
+    dynamic body, {
+    Map<String, dynamic>? queryParameters,
+    bool preferRepresentation = true,
+  }) async {
+    final response = await http.patch(
+      _buildUri(path, queryParameters),
+      headers: _buildHeaders(preferRepresentation: preferRepresentation),
+      body: jsonEncode(body),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'PATCH $path başarısız: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    if (response.body.isEmpty) {
+      return [];
+    }
+
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) {
+      return decoded;
+    }
+    return [decoded];
+  }
+
+  Future<void> _delete(
+    String path, {
+    Map<String, dynamic>? queryParameters,
+  }) async {
+    final response = await http.delete(
+      _buildUri(path, queryParameters),
+      headers: _buildHeaders(),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'DELETE $path başarısız: ${response.statusCode} ${response.body}',
+      );
+    }
+  }
+
+  Future<dynamic> _rpc(String functionName, Map<String, dynamic> args) async {
+    final response = await http.post(
+      _buildUri('/rpc/$functionName'),
+      headers: _buildHeaders(preferRepresentation: true),
+      body: jsonEncode(args),
+    );
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Exception(
+        'RPC $functionName başarısız: ${response.statusCode} ${response.body}',
+      );
+    }
+
+    if (response.body.isEmpty) {
+      return null;
+    }
+
+    return jsonDecode(response.body);
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    return int.tryParse(value?.toString() ?? '0') ?? 0;
+  }
+
+  double _asDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '0') ?? 0;
   }
 
   // =====================================================
@@ -88,18 +265,31 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT generate_fatura_kodu(\$1)
-      ''', substitutionValues: {'\$1': tableId});
+      final result = await _rpc(
+        'generate_fatura_kodu',
+        {'p_table_id': tableId},
+      );
 
-      if (results.isNotEmpty) {
-        return results.first[0] as String;
+      if (result is String && result.isNotEmpty) {
+        return result;
+      }
+      if (result is List && result.isNotEmpty) {
+        final first = result.first;
+        if (first is String && first.isNotEmpty) {
+          return first;
+        }
+        if (first is Map<String, dynamic>) {
+          final value = first.values.isNotEmpty ? first.values.first : null;
+          if (value is String && value.isNotEmpty) {
+            return value;
+          }
+        }
       }
 
-      throw Exception('Fatura kodu oluşturulamadı');
+      return 'T$tableId-${DateTime.now().millisecondsSinceEpoch}';
     } catch (e) {
       _logger.e('Fatura kodu oluşturma hatası: $e');
-      rethrow;
+      return 'T$tableId-${DateTime.now().millisecondsSinceEpoch}';
     }
   }
 
@@ -113,26 +303,30 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT id, username, password, role, is_active, email, first_name, last_name, phone, created_at, updated_at
-        FROM users
-        WHERE is_active = true
-        ORDER BY username
-      ''');
+      final rows = await _getList(
+        '/users',
+        queryParameters: {
+          'select':
+              'id,username,password,role,is_active,email,first_name,last_name,phone,created_at,updated_at',
+          'is_active': 'eq.true',
+          'order': 'username.asc',
+        },
+      );
 
-      return results
+      return rows
+          .whereType<Map<String, dynamic>>()
           .map((row) => {
-                'id': row[0],
-                'username': row[1],
-                'password': row[2],
-                'role': row[3],
-                'isActive': row[4],
-                'email': row[5],
-                'firstName': row[6],
-                'lastName': row[7],
-                'phone': row[8],
-                'createdAt': row[9]?.toString(),
-                'updatedAt': row[10]?.toString(),
+                'id': row['id'],
+                'username': row['username'],
+                'password': row['password'],
+                'role': row['role'],
+                'isActive': row['is_active'] == true,
+                'email': row['email'],
+                'firstName': row['first_name'],
+                'lastName': row['last_name'],
+                'phone': row['phone'],
+                'createdAt': row['created_at']?.toString(),
+                'updatedAt': row['updated_at']?.toString(),
               })
           .toList();
     } catch (e) {
@@ -148,26 +342,29 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT id, username, password, role, is_active, email, first_name, last_name
-        FROM users
-        WHERE username = @username AND password = @password AND is_active = true
-      ''', substitutionValues: {
-        'username': username,
-        'password': password,
-      });
+      final rows = await _getList(
+        '/users',
+        queryParameters: {
+          'select':
+              'id,username,password,role,is_active,email,first_name,last_name',
+          'username': 'eq.$username',
+          'password': 'eq.$password',
+          'is_active': 'eq.true',
+          'limit': 1,
+        },
+      );
 
-      if (results.isNotEmpty) {
-        final user = results.first;
+      if (rows.isNotEmpty && rows.first is Map<String, dynamic>) {
+        final user = rows.first as Map<String, dynamic>;
         return {
-          'id': user[0],
-          'username': user[1],
-          'password': user[2],
-          'role': user[3],
-          'isActive': user[4],
-          'email': user[5],
-          'firstName': user[6],
-          'lastName': user[7],
+          'id': user['id'],
+          'username': user['username'],
+          'password': user['password'],
+          'role': user['role'],
+          'isActive': user['is_active'] == true,
+          'email': user['email'],
+          'firstName': user['first_name'],
+          'lastName': user['last_name'],
         };
       }
       return null;
@@ -187,28 +384,38 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT t.id, t.name, t.capacity, t.status, t.location, t.is_active, 
-               t.created_at, t.updated_at, r.name as region_name, r.id as region_id
-        FROM tables t
-        LEFT JOIN regions r ON t.region_id = r.id
-        WHERE t.is_active = true
-        ORDER BY t.name
-      ''');
+      final rows = await _getList(
+        '/tables',
+        queryParameters: {
+          'select':
+              'id,name,capacity,status,location,is_active,created_at,updated_at,region_id,regions(id,name)',
+          'is_active': 'eq.true',
+          'order': 'name.asc',
+        },
+      );
 
-      return results
-          .map((row) => {
-                'id': row[0],
-                'name': row[1],
-                'capacity': row[2],
-                'status': row[3],
-                'location': row[4],
-                'isActive': row[5],
-                'createdAt': row[6]?.toString(),
-                'updatedAt': row[7]?.toString(),
-                'regionName': row[8],
-                'regionId': row[9],
-              })
+      return rows
+          .whereType<Map<String, dynamic>>()
+          .map((row) {
+            final region = row['regions'];
+            final regionData = region is Map<String, dynamic>
+                ? region
+                : (region is List && region.isNotEmpty && region.first is Map
+                    ? region.first as Map<String, dynamic>
+                    : <String, dynamic>{});
+            return {
+              'id': row['id'],
+              'name': row['name'],
+              'capacity': row['capacity'],
+              'status': row['status'],
+              'location': row['location'],
+              'isActive': row['is_active'] == true,
+              'createdAt': row['created_at']?.toString(),
+              'updatedAt': row['updated_at']?.toString(),
+              'regionName': regionData['name'],
+              'regionId': row['region_id'] ?? regionData['id'],
+            };
+          })
           .toList();
     } catch (e) {
       _logger.e('Masalar getirilemedi: $e');
@@ -222,21 +429,24 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT id, name, description, is_active, created_at, updated_at
-        FROM regions
-        WHERE is_active = true
-        ORDER BY name
-      ''');
+      final rows = await _getList(
+        '/regions',
+        queryParameters: {
+          'select': 'id,name,description,is_active,created_at,updated_at',
+          'is_active': 'eq.true',
+          'order': 'name.asc',
+        },
+      );
 
-      return results
+      return rows
+          .whereType<Map<String, dynamic>>()
           .map((row) => {
-                'id': row[0],
-                'name': row[1],
-                'description': row[2],
-                'isActive': row[3],
-                'createdAt': row[4]?.toString(),
-                'updatedAt': row[5]?.toString(),
+                'id': row['id'],
+                'name': row['name'],
+                'description': row['description'],
+                'isActive': row['is_active'] == true,
+                'createdAt': row['created_at']?.toString(),
+                'updatedAt': row['updated_at']?.toString(),
               })
           .toList();
     } catch (e) {
@@ -251,14 +461,14 @@ class PostgresService {
         await initialize();
       }
 
-      await _connection!.execute('''
-        UPDATE tables 
-        SET status = @status, updated_at = NOW()
-        WHERE id = @tableId
-      ''', substitutionValues: {
-        'status': status,
-        'tableId': tableId,
-      });
+      await _patch(
+        '/tables',
+        {
+          'status': status,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        queryParameters: {'id': 'eq.$tableId'},
+      );
 
       _logger.i('Masa durumu güncellendi: $tableId -> $status');
       return true;
@@ -274,15 +484,13 @@ class PostgresService {
         await initialize();
       }
 
-      await _connection!.execute('''
-        INSERT INTO tables (name, capacity, status, location, region_id, is_active, created_at)
-        VALUES (@name, @capacity, @status, @location, @regionId, true, NOW())
-      ''', substitutionValues: {
+      await _post('/tables', {
         'name': tableData['name'],
-        'capacity': tableData['capacity'],
-        'status': tableData['status'],
+        'capacity': tableData['capacity'] ?? 4,
+        'status': tableData['status'] ?? 'Available',
         'location': tableData['location'],
-        'regionId': tableData['regionId'],
+        'region_id': tableData['regionId'],
+        'is_active': true,
       });
 
       _logger.i('Masa eklendi: ${tableData['name']}');
@@ -299,19 +507,18 @@ class PostgresService {
         await initialize();
       }
 
-      await _connection!.execute('''
-        UPDATE tables 
-        SET name = @name, capacity = @capacity, status = @status, 
-            location = @location, region_id = @regionId, updated_at = NOW()
-        WHERE id = @tableId
-      ''', substitutionValues: {
-        'name': tableData['name'],
-        'capacity': tableData['capacity'],
-        'status': tableData['status'],
-        'location': tableData['location'],
-        'regionId': tableData['regionId'],
-        'tableId': tableId,
-      });
+      await _patch(
+        '/tables',
+        {
+          'name': tableData['name'],
+          'capacity': tableData['capacity'],
+          'status': tableData['status'],
+          'location': tableData['location'],
+          'region_id': tableData['regionId'],
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        queryParameters: {'id': 'eq.$tableId'},
+      );
 
       _logger.i('Masa güncellendi: $tableId');
       return true;
@@ -327,13 +534,14 @@ class PostgresService {
         await initialize();
       }
 
-      await _connection!.execute('''
-        UPDATE tables 
-        SET is_active = false, updated_at = NOW()
-        WHERE id = @tableId
-      ''', substitutionValues: {
-        'tableId': tableId,
-      });
+      await _patch(
+        '/tables',
+        {
+          'is_active': false,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        queryParameters: {'id': 'eq.$tableId'},
+      );
 
       _logger.i('Masa silindi: $tableId');
       return true;
@@ -349,26 +557,27 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT id, name, capacity, status, location, is_active, 
-               created_at, updated_at
-        FROM tables
-        WHERE region_id = @regionId AND is_active = true
-        ORDER BY name
-      ''', substitutionValues: {
-        'regionId': regionId,
-      });
+      final rows = await _getList(
+        '/tables',
+        queryParameters: {
+          'select': 'id,name,capacity,status,location,is_active,created_at,updated_at',
+          'region_id': 'eq.$regionId',
+          'is_active': 'eq.true',
+          'order': 'name.asc',
+        },
+      );
 
-      return results
+      return rows
+          .whereType<Map<String, dynamic>>()
           .map((row) => {
-                'id': row[0],
-                'name': row[1],
-                'capacity': row[2],
-                'status': row[3],
-                'location': row[4],
-                'isActive': row[5],
-                'createdAt': row[6]?.toString(),
-                'updatedAt': row[7]?.toString(),
+                'id': row['id'],
+                'name': row['name'],
+                'capacity': row['capacity'],
+                'status': row['status'],
+                'location': row['location'],
+                'isActive': row['is_active'] == true,
+                'createdAt': row['created_at']?.toString(),
+                'updatedAt': row['updated_at']?.toString(),
               })
           .toList();
     } catch (e) {
@@ -387,21 +596,24 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT id, name, description, is_active, created_at, updated_at
-        FROM categories
-        WHERE is_active = true
-        ORDER BY name
-      ''');
+      final rows = await _getList(
+        '/categories',
+        queryParameters: {
+          'select': 'id,name,description,is_active,created_at,updated_at',
+          'is_active': 'eq.true',
+          'order': 'name.asc',
+        },
+      );
 
-      return results
+      return rows
+          .whereType<Map<String, dynamic>>()
           .map((row) => {
-                'id': row[0],
-                'name': row[1],
-                'description': row[2],
-                'isActive': row[3],
-                'createdAt': row[4]?.toString(),
-                'updatedAt': row[5]?.toString(),
+                'id': row['id'],
+                'name': row['name'],
+                'description': row['description'],
+                'isActive': row['is_active'] == true,
+                'createdAt': row['created_at']?.toString(),
+                'updatedAt': row['updated_at']?.toString(),
               })
           .toList();
     } catch (e) {
@@ -416,29 +628,39 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT p.id, p.name, p.description, p.price, p.is_active, p.image_url, 
-               p.preparation_time, p.created_at, p.updated_at, c.name as category_name, c.id as category_id
-        FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
-        WHERE p.is_active = true
-        ORDER BY p.name
-      ''');
+      final rows = await _getList(
+        '/products',
+        queryParameters: {
+          'select':
+              'id,name,description,price,is_active,image_url,preparation_time,created_at,updated_at,category_id,categories(id,name)',
+          'is_active': 'eq.true',
+          'order': 'name.asc',
+        },
+      );
 
-      return results
-          .map((row) => {
-                'id': row[0],
-                'name': row[1],
-                'description': row[2],
-                'price': row[3],
-                'isActive': row[4],
-                'imageUrl': row[5],
-                'preparationTime': row[6],
-                'createdAt': row[7]?.toString(),
-                'updatedAt': row[8]?.toString(),
-                'categoryName': row[9],
-                'categoryId': row[10],
-              })
+      return rows
+          .whereType<Map<String, dynamic>>()
+          .map((row) {
+            final category = row['categories'];
+            final categoryData = category is Map<String, dynamic>
+                ? category
+                : (category is List && category.isNotEmpty && category.first is Map
+                    ? category.first as Map<String, dynamic>
+                    : <String, dynamic>{});
+            return {
+              'id': row['id'],
+              'name': row['name'],
+              'description': row['description'],
+              'price': row['price'],
+              'isActive': row['is_active'] == true,
+              'imageUrl': row['image_url'],
+              'preparationTime': row['preparation_time'],
+              'createdAt': row['created_at']?.toString(),
+              'updatedAt': row['updated_at']?.toString(),
+              'categoryName': categoryData['name'],
+              'categoryId': row['category_id'] ?? categoryData['id'],
+            };
+          })
           .toList();
     } catch (e) {
       _logger.e('Ürünler getirilemedi: $e');
@@ -453,27 +675,29 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT id, name, description, price, is_active, image_url, 
-               preparation_time, created_at, updated_at
-        FROM products
-        WHERE category_id = @categoryId AND is_active = true
-        ORDER BY name
-      ''', substitutionValues: {
-        'categoryId': categoryId,
-      });
+      final rows = await _getList(
+        '/products',
+        queryParameters: {
+          'select':
+              'id,name,description,price,is_active,image_url,preparation_time,created_at,updated_at',
+          'category_id': 'eq.$categoryId',
+          'is_active': 'eq.true',
+          'order': 'name.asc',
+        },
+      );
 
-      return results
+      return rows
+          .whereType<Map<String, dynamic>>()
           .map((row) => {
-                'id': row[0],
-                'name': row[1],
-                'description': row[2],
-                'price': row[3],
-                'isActive': row[4],
-                'imageUrl': row[5],
-                'preparationTime': row[6],
-                'createdAt': row[7]?.toString(),
-                'updatedAt': row[8]?.toString(),
+                'id': row['id'],
+                'name': row['name'],
+                'description': row['description'],
+                'price': row['price'],
+                'isActive': row['is_active'] == true,
+                'imageUrl': row['image_url'],
+                'preparationTime': row['preparation_time'],
+                'createdAt': row['created_at']?.toString(),
+                'updatedAt': row['updated_at']?.toString(),
               })
           .toList();
     } catch (e) {
@@ -506,61 +730,47 @@ class PostgresService {
       // Fatura kodu oluştur
       final faturaKodu = await generateFaturaKodu(tableId);
 
-      // Sipariş oluştur
-      final orderResult = await _connection!.query('''
-        INSERT INTO orders (
-          fatura_kodu, table_id, customer_name, customer_phone, notes, 
-          total_amount, discount_amount, final_amount, 
-          payment_status, status, created_at, updated_at
-        ) VALUES (
-          @faturaKodu, @tableId, @customerName, @customerPhone, @notes,
-          @totalAmount, @discount, @finalAmount,
-          @paymentStatus, @orderStatus, NOW(), NOW()
-        ) RETURNING id, fatura_kodu
-      ''', substitutionValues: {
-        'faturaKodu': faturaKodu,
-        'tableId': tableId,
-        'customerName': customerName,
-        'customerPhone': customerPhone,
+      final orderRows = await _post('/orders', {
+        'fatura_kodu': faturaKodu,
+        'table_id': tableId,
+        'customer_name': customerName,
+        'customer_phone': customerPhone,
         'notes': notes,
-        'totalAmount': totalAmount,
-        'discount': discount,
-        'finalAmount': finalAmount,
-        'paymentStatus': paymentStatus,
-        'orderStatus': orderStatus,
+        'total_amount': totalAmount,
+        'discount_amount': discount,
+        'final_amount': finalAmount,
+        'payment_status': paymentStatus,
+        'status': orderStatus,
       });
 
-      final orderId = orderResult.first[0] as int;
-      final returnedFaturaKodu = orderResult.first[1] as String;
+      if (orderRows.isEmpty || orderRows.first is! Map<String, dynamic>) {
+        throw Exception('Sipariş kaydı oluşturulamadı');
+      }
+      final orderData = orderRows.first as Map<String, dynamic>;
+      final orderId = _asInt(orderData['id']);
+      final returnedFaturaKodu =
+          (orderData['fatura_kodu'] ?? faturaKodu).toString();
 
       // Sipariş kalemlerini ekle
       for (final item in items) {
-        await _connection!.query('''
-          INSERT INTO order_items (
-            order_id, product_id, product_name, quantity, 
-            unit_price, total_price, notes, created_at
-          ) VALUES (
-            @orderId, @productId, @productName, @quantity,
-            @unitPrice, @totalPrice, @notes, NOW()
-          )
-        ''', substitutionValues: {
-          'orderId': orderId,
-          'productId': item['productId'],
-          'productName': item['productName'],
-          'quantity': item['quantity'],
-          'unitPrice': item['unitPrice'],
-          'totalPrice': item['totalPrice'],
+        await _post('/order_items', {
+          'order_id': orderId,
+          'product_id': item['productId'],
+          'quantity': item['quantity'] ?? 1,
+          'unit_price': item['unitPrice'] ?? 0,
+          'total_price': item['totalPrice'] ?? 0,
           'notes': item['notes'],
-        });
+          'status': item['status'] ?? 'pending',
+        }, preferRepresentation: false);
       }
 
       // Masayı dolu olarak işaretle
-      await _connection!.query('''
-        UPDATE tables SET status = 'occupied', updated_at = NOW()
-        WHERE id = @tableId
-      ''', substitutionValues: {
-        'tableId': tableId,
-      });
+      await _patch(
+        '/tables',
+        {'status': 'occupied'},
+        queryParameters: {'id': 'eq.$tableId'},
+        preferRepresentation: false,
+      );
 
       return {
         'id': orderId,
@@ -591,68 +801,59 @@ class PostgresService {
         await initialize();
       }
 
-      String query = '''
-        SELECT 
-          o.id, o.fatura_kodu, o.table_id, o.customer_name, o.customer_phone, o.notes,
-          o.total_amount, o.discount_amount, o.final_amount,
-          o.payment_status, o.status, o.created_at, o.updated_at,
-          t.name as table_name, t.capacity as table_capacity
-        FROM orders o
-        LEFT JOIN tables t ON o.table_id = t.id
-        WHERE 1=1
-      ''';
-
-      final substitutionValues = <String, dynamic>{};
+      final queryParameters = <String, dynamic>{
+        'select':
+            'id,fatura_kodu,table_id,customer_name,customer_phone,notes,total_amount,discount_amount,final_amount,payment_status,status,created_at,updated_at,tables(name,capacity)',
+        'order': 'created_at.desc',
+      };
 
       if (tableId != null) {
-        query += ' AND o.table_id = @tableId';
-        substitutionValues['tableId'] = tableId;
+        queryParameters['table_id'] = 'eq.$tableId';
+      }
+      if (status != null && status.isNotEmpty) {
+        queryParameters['status'] = 'eq.$status';
+      }
+      if (paymentStatus != null && paymentStatus.isNotEmpty) {
+        queryParameters['payment_status'] = 'eq.$paymentStatus';
+      }
+      if (startDate != null && endDate != null) {
+        queryParameters['and'] =
+            '(created_at.gte.${startDate.toIso8601String()},created_at.lte.${endDate.toIso8601String()})';
+      } else if (startDate != null) {
+        queryParameters['created_at'] = 'gte.${startDate.toIso8601String()}';
+      } else if (endDate != null) {
+        queryParameters['created_at'] = 'lte.${endDate.toIso8601String()}';
       }
 
-      if (status != null) {
-        query += ' AND o.status = @status';
-        substitutionValues['status'] = status;
-      }
+      final rows = await _getList('/orders', queryParameters: queryParameters);
 
-      if (paymentStatus != null) {
-        query += ' AND o.payment_status = @paymentStatus';
-        substitutionValues['paymentStatus'] = paymentStatus;
-      }
-
-      if (startDate != null) {
-        query += ' AND DATE(o.created_at) >= @startDate';
-        substitutionValues['startDate'] =
-            startDate.toIso8601String().split('T')[0];
-      }
-
-      if (endDate != null) {
-        query += ' AND DATE(o.created_at) <= @endDate';
-        substitutionValues['endDate'] = endDate.toIso8601String().split('T')[0];
-      }
-
-      query += ' ORDER BY o.created_at DESC';
-
-      final results = await _connection!
-          .query(query, substitutionValues: substitutionValues);
-
-      return results
-          .map((row) => {
-                'id': row[0],
-                'faturaKodu': row[1],
-                'tableId': row[2],
-                'customerName': row[3],
-                'customerPhone': row[4],
-                'notes': row[5],
-                'totalAmount': row[6],
-                'discountAmount': row[7],
-                'finalAmount': row[8],
-                'paymentStatus': row[9],
-                'orderStatus': row[10],
-                'createdAt': row[11]?.toString(),
-                'updatedAt': row[12]?.toString(),
-                'tableName': row[13],
-                'tableCapacity': row[14],
-              })
+      return rows
+          .whereType<Map<String, dynamic>>()
+          .map((row) {
+            final table = row['tables'];
+            final tableData = table is Map<String, dynamic>
+                ? table
+                : (table is List && table.isNotEmpty && table.first is Map
+                    ? table.first as Map<String, dynamic>
+                    : <String, dynamic>{});
+            return {
+              'id': row['id'],
+              'faturaKodu': row['fatura_kodu'],
+              'tableId': row['table_id'],
+              'customerName': row['customer_name'],
+              'customerPhone': row['customer_phone'],
+              'notes': row['notes'],
+              'totalAmount': _asDouble(row['total_amount']),
+              'discountAmount': _asDouble(row['discount_amount']),
+              'finalAmount': _asDouble(row['final_amount']),
+              'paymentStatus': row['payment_status'],
+              'orderStatus': row['status'],
+              'createdAt': row['created_at']?.toString(),
+              'updatedAt': row['updated_at']?.toString(),
+              'tableName': tableData['name'],
+              'tableCapacity': tableData['capacity'],
+            };
+          })
           .toList();
     } catch (e) {
       _logger.e('Siparişler getirilemedi: $e');
@@ -666,65 +867,57 @@ class PostgresService {
         await initialize();
       }
 
-      final orderResult = await _connection!.query('''
-        SELECT 
-          o.id, o.fatura_kodu, o.table_id, o.customer_name, o.customer_phone, o.notes,
-          o.total_amount, o.discount_amount, o.final_amount,
-          o.payment_status, o.status, o.created_at, o.updated_at,
-          t.name as table_name, t.capacity as table_capacity
-        FROM orders o
-        LEFT JOIN tables t ON o.table_id = t.id
-        WHERE o.id = @orderId
-      ''', substitutionValues: {
-        'orderId': orderId,
+      final rows = await _getList('/orders', queryParameters: {
+        'select':
+            'id,fatura_kodu,table_id,customer_name,customer_phone,notes,total_amount,discount_amount,final_amount,payment_status,status,created_at,updated_at,tables(name,capacity),order_items(*)',
+        'id': 'eq.$orderId',
+        'limit': 1,
       });
 
-      if (orderResult.isEmpty) {
+      if (rows.isEmpty || rows.first is! Map<String, dynamic>) {
         return null;
       }
 
-      final order = orderResult.first;
+      final order = rows.first as Map<String, dynamic>;
+      final orderItems = order['order_items'] is List
+          ? order['order_items'] as List
+          : <dynamic>[];
+      final table = order['tables'];
+      final tableData = table is Map<String, dynamic>
+          ? table
+          : (table is List && table.isNotEmpty && table.first is Map
+              ? table.first as Map<String, dynamic>
+              : <String, dynamic>{});
 
-      // Sipariş kalemlerini getir
-      final itemsResult = await _connection!.query('''
-        SELECT 
-          id, product_id, product_name, quantity, 
-          unit_price, total_price, notes, created_at
-        FROM order_items
-        WHERE order_id = @orderId
-        ORDER BY created_at
-      ''', substitutionValues: {
-        'orderId': orderId,
-      });
-
-      final items = itemsResult
-          .map((row) => {
-                'id': row[0],
-                'productId': row[1],
-                'productName': row[2],
-                'quantity': row[3],
-                'unitPrice': row[4],
-                'totalPrice': row[5],
-                'notes': row[6],
-                'createdAt': row[7]?.toString(),
-              })
-          .toList();
+      final items = orderItems.whereType<Map<String, dynamic>>().map((item) {
+        return {
+          'id': item['id'],
+          'productId': item['product_id'],
+          'productName': item['product_name'],
+          'quantity': item['quantity'],
+          'unitPrice': _asDouble(item['unit_price']),
+          'totalPrice': _asDouble(item['total_price']),
+          'notes': item['notes'],
+          'createdAt': item['created_at']?.toString(),
+        };
+      }).toList();
 
       return {
-        'id': order[0],
-        'tableId': order[1],
-        'customerName': order[2],
-        'customerPhone': order[3],
-        'notes': order[4],
-        'totalAmount': order[5],
-        'discountAmount': order[6],
-        'finalAmount': order[7],
-        'paymentStatus': order[8],
-        'orderStatus': order[9],
-        'createdAt': order[10]?.toString(),
-        'updatedAt': order[11]?.toString(),
-        'tableName': order[12],
-        'tableCapacity': order[13],
+        'id': order['id'],
+        'faturaKodu': order['fatura_kodu'],
+        'tableId': order['table_id'],
+        'customerName': order['customer_name'],
+        'customerPhone': order['customer_phone'],
+        'notes': order['notes'],
+        'totalAmount': _asDouble(order['total_amount']),
+        'discountAmount': _asDouble(order['discount_amount']),
+        'finalAmount': _asDouble(order['final_amount']),
+        'paymentStatus': order['payment_status'],
+        'orderStatus': order['status'],
+        'createdAt': order['created_at']?.toString(),
+        'updatedAt': order['updated_at']?.toString(),
+        'tableName': tableData['name'],
+        'tableCapacity': tableData['capacity'],
         'items': items,
       };
     } catch (e) {
@@ -739,14 +932,14 @@ class PostgresService {
         await initialize();
       }
 
-      await _connection!.query('''
-        UPDATE orders 
-        SET order_status = @status, updated_at = NOW()
-        WHERE id = @orderId
-      ''', substitutionValues: {
-        'orderId': orderId,
-        'status': status,
-      });
+      await _patch(
+        '/orders',
+        {
+          'status': status,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        queryParameters: {'id': 'eq.$orderId'},
+      );
 
       return true;
     } catch (e) {
@@ -761,14 +954,14 @@ class PostgresService {
         await initialize();
       }
 
-      await _connection!.query('''
-        UPDATE orders 
-        SET payment_status = @paymentStatus, updated_at = NOW()
-        WHERE id = @orderId
-      ''', substitutionValues: {
-        'orderId': orderId,
-        'paymentStatus': paymentStatus,
-      });
+      await _patch(
+        '/orders',
+        {
+          'payment_status': paymentStatus,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        queryParameters: {'id': 'eq.$orderId'},
+      );
 
       return true;
     } catch (e) {
@@ -783,19 +976,8 @@ class PostgresService {
         await initialize();
       }
 
-      // Önce sipariş kalemlerini sil
-      await _connection!.query('''
-        DELETE FROM order_items WHERE order_id = @orderId
-      ''', substitutionValues: {
-        'orderId': orderId,
-      });
-
-      // Sonra siparişi sil
-      await _connection!.query('''
-        DELETE FROM orders WHERE id = @orderId
-      ''', substitutionValues: {
-        'orderId': orderId,
-      });
+      await _delete('/order_items', queryParameters: {'order_id': 'eq.$orderId'});
+      await _delete('/orders', queryParameters: {'id': 'eq.$orderId'});
 
       return true;
     } catch (e) {
@@ -810,38 +992,7 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT 
-          o.id, o.table_id, o.customer_name, o.customer_phone, o.notes,
-          o.total_amount, o.discount_amount, o.final_amount,
-          o.payment_status, o.order_status, o.created_at, o.updated_at,
-          t.name as table_name, t.capacity as table_capacity
-        FROM orders o
-        LEFT JOIN tables t ON o.table_id = t.id
-        WHERE o.table_id = @tableId
-        ORDER BY o.created_at DESC
-      ''', substitutionValues: {
-        'tableId': tableId,
-      });
-
-      return results
-          .map((row) => {
-                'id': row[0],
-                'tableId': row[1],
-                'customerName': row[2],
-                'customerPhone': row[3],
-                'notes': row[4],
-                'totalAmount': row[5],
-                'discountAmount': row[6],
-                'finalAmount': row[7],
-                'paymentStatus': row[8],
-                'orderStatus': row[9],
-                'createdAt': row[10]?.toString(),
-                'updatedAt': row[11]?.toString(),
-                'tableName': row[12],
-                'tableCapacity': row[13],
-              })
-          .toList();
+      return getOrders(tableId: tableId);
     } catch (e) {
       _logger.e('Masa siparişleri getirilemedi: $e');
       return [];
@@ -854,40 +1005,24 @@ class PostgresService {
         await initialize();
       }
 
-      // Bugünkü sipariş sayısı
-      final todayOrdersResult = await _connection!.query('''
-        SELECT COUNT(*) FROM orders 
-        WHERE DATE(created_at) = CURRENT_DATE
-      ''');
-      final todayOrders = todayOrdersResult.first[0] as int;
+      final now = DateTime.now();
+      final todayStart = DateTime(now.year, now.month, now.day);
+      final orders = await getOrders(startDate: todayStart);
+      final paidOrders =
+          orders.where((order) => order['paymentStatus'] == 'paid').toList();
 
-      // Bugünkü toplam gelir
-      final todayRevenueResult = await _connection!.query('''
-        SELECT COALESCE(SUM(final_amount), 0) FROM orders 
-        WHERE DATE(created_at) = CURRENT_DATE AND payment_status = 'paid'
-      ''');
-      final todayRevenue = todayRevenueResult.first[0] as double;
-
-      // Bekleyen sipariş sayısı
-      final pendingOrdersResult = await _connection!.query('''
-        SELECT COUNT(*) FROM orders 
-        WHERE order_status = 'active'
-      ''');
-      final pendingOrders = pendingOrdersResult.first[0] as int;
-
-      // Ödenmemiş sipariş sayısı
-      final unpaidOrdersResult = await _connection!.query('''
-        SELECT COUNT(*) FROM orders 
-        WHERE payment_status = 'pending'
-      ''');
-      final unpaidOrders = unpaidOrdersResult.first[0] as int;
-
-      // Ortalama sipariş tutarı
-      final avgOrderAmountResult = await _connection!.query('''
-        SELECT COALESCE(AVG(final_amount), 0) FROM orders 
-        WHERE DATE(created_at) = CURRENT_DATE
-      ''');
-      final avgOrderAmount = avgOrderAmountResult.first[0] as double;
+      final todayOrders = orders.length;
+      final todayRevenue = paidOrders.fold<double>(
+        0,
+        (sum, order) => sum + _asDouble(order['finalAmount']),
+      );
+      final pendingOrders = orders
+          .where((order) => order['orderStatus'] == 'active')
+          .length;
+      final unpaidOrders = orders
+          .where((order) => order['paymentStatus'] == 'pending')
+          .length;
+      final avgOrderAmount = todayOrders > 0 ? (todayRevenue / todayOrders) : 0.0;
 
       return {
         'todayOrders': todayOrders,
@@ -918,31 +1053,40 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT r.id, r.table_id, r.customer_name, r.customer_phone, r.customer_email,
-               r.reservation_date, r.reservation_time, r.party_size, r.status, r.notes,
-               r.created_at, r.updated_at, t.name as table_name
-        FROM reservations r
-        LEFT JOIN tables t ON r.table_id = t.id
-        ORDER BY r.reservation_date DESC, r.reservation_time DESC
-      ''');
+      final rows = await _getList(
+        '/reservations',
+        queryParameters: {
+          'select':
+              'id,table_id,customer_name,customer_phone,customer_email,reservation_date,reservation_time,party_size,status,notes,created_at,updated_at,tables(name)',
+          'order': 'reservation_date.desc',
+        },
+      );
 
-      return results
-          .map((row) => {
-                'id': row[0],
-                'tableId': row[1],
-                'customerName': row[2],
-                'customerPhone': row[3],
-                'customerEmail': row[4],
-                'reservationDate': row[5]?.toString(),
-                'reservationTime': row[6]?.toString(),
-                'partySize': row[7],
-                'status': row[8],
-                'notes': row[9],
-                'createdAt': row[10]?.toString(),
-                'updatedAt': row[11]?.toString(),
-                'tableName': row[12],
-              })
+      return rows
+          .whereType<Map<String, dynamic>>()
+          .map((row) {
+            final table = row['tables'];
+            final tableData = table is Map<String, dynamic>
+                ? table
+                : (table is List && table.isNotEmpty && table.first is Map
+                    ? table.first as Map<String, dynamic>
+                    : <String, dynamic>{});
+            return {
+              'id': row['id'],
+              'tableId': row['table_id'],
+              'customerName': row['customer_name'],
+              'customerPhone': row['customer_phone'],
+              'customerEmail': row['customer_email'],
+              'reservationDate': row['reservation_date']?.toString(),
+              'reservationTime': row['reservation_time']?.toString(),
+              'partySize': row['party_size'],
+              'status': row['status'],
+              'notes': row['notes'],
+              'createdAt': row['created_at']?.toString(),
+              'updatedAt': row['updated_at']?.toString(),
+              'tableName': tableData['name'],
+            };
+          })
           .toList();
     } catch (e) {
       _logger.e('Rezervasyonlar getirilemedi: $e');
@@ -960,28 +1104,31 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT id, name, phone, email, address, birth_date, total_orders, 
-               total_spent, loyalty_points, is_active, created_at, updated_at
-        FROM customers
-        WHERE is_active = true
-        ORDER BY name
-      ''');
+      final rows = await _getList(
+        '/customers',
+        queryParameters: {
+          'select':
+              'id,name,phone,email,address,birth_date,total_orders,total_spent,loyalty_points,is_active,created_at,updated_at',
+          'is_active': 'eq.true',
+          'order': 'name.asc',
+        },
+      );
 
-      return results
+      return rows
+          .whereType<Map<String, dynamic>>()
           .map((row) => {
-                'id': row[0],
-                'name': row[1],
-                'phone': row[2],
-                'email': row[3],
-                'address': row[4],
-                'birthDate': row[5]?.toString(),
-                'totalOrders': row[6],
-                'totalSpent': row[7],
-                'loyaltyPoints': row[8],
-                'isActive': row[9],
-                'createdAt': row[10]?.toString(),
-                'updatedAt': row[11]?.toString(),
+                'id': row['id'],
+                'name': row['name'],
+                'phone': row['phone'],
+                'email': row['email'],
+                'address': row['address'],
+                'birthDate': row['birth_date']?.toString(),
+                'totalOrders': _asInt(row['total_orders']),
+                'totalSpent': _asDouble(row['total_spent']),
+                'loyaltyPoints': _asInt(row['loyalty_points']),
+                'isActive': row['is_active'] == true,
+                'createdAt': row['created_at']?.toString(),
+                'updatedAt': row['updated_at']?.toString(),
               })
           .toList();
     } catch (e) {
@@ -1000,28 +1147,31 @@ class PostgresService {
         await initialize();
       }
 
-      final results = await _connection!.query('''
-        SELECT id, name, description, unit, current_stock, min_stock, max_stock,
-               unit_price, supplier, is_active, created_at, updated_at
-        FROM ingredients
-        WHERE is_active = true
-        ORDER BY name
-      ''');
+      final rows = await _getList(
+        '/ingredients',
+        queryParameters: {
+          'select':
+              'id,name,description,unit,current_stock,min_stock,max_stock,unit_price,supplier,is_active,created_at,updated_at',
+          'is_active': 'eq.true',
+          'order': 'name.asc',
+        },
+      );
 
-      return results
+      return rows
+          .whereType<Map<String, dynamic>>()
           .map((row) => {
-                'id': row[0],
-                'name': row[1],
-                'description': row[2],
-                'unit': row[3],
-                'currentStock': row[4],
-                'minStock': row[5],
-                'maxStock': row[6],
-                'unitPrice': row[7],
-                'supplier': row[8],
-                'isActive': row[9],
-                'createdAt': row[10]?.toString(),
-                'updatedAt': row[11]?.toString(),
+                'id': row['id'],
+                'name': row['name'],
+                'description': row['description'],
+                'unit': row['unit'],
+                'currentStock': _asDouble(row['current_stock']),
+                'minStock': _asDouble(row['min_stock']),
+                'maxStock': _asDouble(row['max_stock']),
+                'unitPrice': _asDouble(row['unit_price']),
+                'supplier': row['supplier'],
+                'isActive': row['is_active'] == true,
+                'createdAt': row['created_at']?.toString(),
+                'updatedAt': row['updated_at']?.toString(),
               })
           .toList();
     } catch (e) {
@@ -1034,57 +1184,111 @@ class PostgresService {
   // İSTATİSTİKLER
   // =====================================================
 
+  Future<List<Map<String, dynamic>>> getReportTemplates() async {
+    try {
+      if (!_isConnected) {
+        await initialize();
+      }
+
+      final rows = await _getList(
+        '/report_templates',
+        queryParameters: {
+          'select':
+              'id,name,description,category,is_system,data_source,columns,filters,grouping,sorting,aggregations,chart_config,is_public,created_at,updated_at',
+          'order': 'created_at.desc',
+        },
+      );
+
+      return rows.whereType<Map<String, dynamic>>().toList();
+    } catch (e) {
+      _logger.e('Rapor şablonları getirilemedi: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getReportExecutions({
+    String? templateId,
+  }) async {
+    try {
+      if (!_isConnected) {
+        await initialize();
+      }
+
+      final query = <String, dynamic>{
+        'select':
+            'id,template_id,scheduled_report_id,status,execution_time_ms,row_count,file_url,file_size_bytes,error_message,created_at',
+        'order': 'created_at.desc',
+      };
+      if (templateId != null && templateId.isNotEmpty) {
+        query['template_id'] = 'eq.$templateId';
+      }
+
+      final rows = await _getList(
+        '/report_executions',
+        queryParameters: query,
+      );
+      return rows.whereType<Map<String, dynamic>>().toList();
+    } catch (e) {
+      _logger.e('Rapor çalıştırma kayıtları getirilemedi: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getDailySalesSummary({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      if (!_isConnected) {
+        await initialize();
+      }
+
+      final query = <String, dynamic>{
+        'select':
+            'sale_date,total_orders,total_revenue,total_tax,total_discount,average_order_value',
+        'order': 'sale_date.desc',
+      };
+      if (startDate != null && endDate != null) {
+        query['and'] =
+            '(sale_date.gte.${startDate.toIso8601String().split('T').first},sale_date.lte.${endDate.toIso8601String().split('T').first})';
+      }
+
+      final rows = await _getList('/daily_sales', queryParameters: query);
+      return rows.whereType<Map<String, dynamic>>().toList();
+    } catch (e) {
+      _logger.e('Günlük satış özeti getirilemedi: $e');
+      return [];
+    }
+  }
+
   Future<Map<String, dynamic>> getStatistics() async {
     try {
       if (!_isConnected) {
         await initialize();
       }
 
-      // Toplam masa sayısı
-      final totalTablesResult = await _connection!.query('''
-        SELECT COUNT(*) FROM tables WHERE is_active = true
-      ''');
-      final totalTables = totalTablesResult.first[0] as int;
+      final tables = await getTables();
+      final regions = await getRegions();
+      final products = await getProducts();
+      final orderStats = await getOrderStatistics();
 
-      // Müsait masa sayısı
-      final availableTablesResult = await _connection!.query('''
-        SELECT COUNT(*) FROM tables 
-        WHERE is_active = true AND status = 'Available'
-      ''');
-      final availableTables = availableTablesResult.first[0] as int;
-
-      // Dolu masa sayısı
-      final occupiedTablesResult = await _connection!.query('''
-        SELECT COUNT(*) FROM tables 
-        WHERE is_active = true AND status = 'occupied'
-      ''');
-      final occupiedTables = occupiedTablesResult.first[0] as int;
-
-      // Toplam bölge sayısı
-      final totalRegionsResult = await _connection!.query('''
-        SELECT COUNT(*) FROM regions WHERE is_active = true
-      ''');
-      final totalRegions = totalRegionsResult.first[0] as int;
-
-      // Toplam ürün sayısı
-      final totalProductsResult = await _connection!.query('''
-        SELECT COUNT(*) FROM products WHERE is_active = true
-      ''');
-      final totalProducts = totalProductsResult.first[0] as int;
-
-      // Toplam sipariş sayısı (bugün)
-      final todayOrdersResult = await _connection!.query('''
-        SELECT COUNT(*) FROM orders 
-        WHERE DATE(created_at) = CURRENT_DATE
-      ''');
-      final todayOrders = todayOrdersResult.first[0] as int;
-
-      // Bugünkü toplam gelir
-      final todayRevenueResult = await _connection!.query('''
-        SELECT COALESCE(SUM(final_amount), 0) FROM orders 
-        WHERE DATE(created_at) = CURRENT_DATE AND payment_status = 'paid'
-      ''');
-      final todayRevenue = todayRevenueResult.first[0] as double;
+      final totalTables = tables.length;
+      final availableTables = tables
+          .where(
+            (table) =>
+                (table['status']?.toString().toLowerCase() ?? '') == 'available',
+          )
+          .length;
+      final occupiedTables = tables
+          .where(
+            (table) =>
+                (table['status']?.toString().toLowerCase() ?? '') == 'occupied',
+          )
+          .length;
+      final totalRegions = regions.length;
+      final totalProducts = products.length;
+      final todayOrders = _asInt(orderStats['todayOrders']);
+      final todayRevenue = _asDouble(orderStats['todayRevenue']);
 
       return {
         'totalTables': totalTables,

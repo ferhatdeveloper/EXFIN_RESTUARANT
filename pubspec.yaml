@@ -24,8 +24,8 @@ dependencies:
   # dio: ^5.4.0
   # retrofit: ^4.0.3
 
-  # PostgreSQL Database
-  postgres: ^2.6.3
+  # PostgREST HTTP Client
+  http: ^1.6.0
 
   # SignalR for real-time communication
   signalr_netcore: ^1.4.3
