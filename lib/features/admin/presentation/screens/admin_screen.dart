@@ -1,223 +1,419 @@
+// Dosya Adı: admin_screen.dart
+// Açıklama: RetailEX tarzı Yönetim/Backoffice modülü - Sidebar + Router
+// Geliştirici: Ferhat NAS
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../../../core/constants/app_constants.dart';
-import '../../../products/presentation/screens/products_screen.dart';
-import '../../../tables/presentation/screens/tables_screen.dart';
-import '../../../orders/presentation/screens/orders_screen.dart';
-import '../../../reports/presentation/screens/reports_screen.dart';
-import '../../../payment/presentation/screens/payment_screen.dart';
-import '../../../kitchen/presentation/screens/kitchen_screen.dart';
+import '../../../../core/localization/app_localizations.dart';
 
-class AdminScreen extends ConsumerWidget {
+class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AdminScreen> createState() => _AdminScreenState();
+}
+
+class _AdminScreenState extends ConsumerState<AdminScreen> {
+  String _currentScreen = 'dashboard';
+  bool _sidebarCollapsed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final lang = ref.watch(languageProvider);
     final width = MediaQuery.of(context).size.width;
-    final isMobile = width < 600;
-    final isTablet = width >= 600 && width < 1100;
-
-    int crossAxisCount = isMobile
-        ? 2
-        : isTablet
-            ? 3
-            : 4;
-
-    final List<AdminMenuItem> menuItems = [
-      AdminMenuItem(
-        title: 'Ürün Yönetimi',
-        subtitle: 'Ürün ekle, düzenle, sil',
-        icon: Icons.inventory_2,
-        color: const Color(0xFF2196F3),
-        route: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ProductsScreen()),
-        ),
-      ),
-      AdminMenuItem(
-        title: 'Masa Yönetimi',
-        subtitle: 'Masa durumları ve rezervasyon',
-        icon: Icons.table_bar,
-        color: const Color(0xFF4CAF50),
-        route: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const TablesScreen()),
-        ),
-      ),
-      AdminMenuItem(
-        title: 'Sipariş Yönetimi',
-        subtitle: 'Sipariş takibi ve yönetimi',
-        icon: Icons.receipt_long,
-        color: const Color(0xFFFF9800),
-        route: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const OrdersScreen()),
-        ),
-      ),
-      AdminMenuItem(
-        title: 'Raporlar',
-        subtitle: 'Satış ve performans raporları',
-        icon: Icons.bar_chart,
-        color: const Color(0xFF9C27B0),
-        route: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ReportsScreen()),
-        ),
-      ),
-      AdminMenuItem(
-        title: 'Ödeme Yönetimi',
-        subtitle: 'Ödeme işlemleri ve takibi',
-        icon: Icons.payment,
-        color: const Color(0xFF607D8B),
-        route: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const PaymentScreen()),
-        ),
-      ),
-      AdminMenuItem(
-        title: 'Mutfak Yönetimi',
-        subtitle: 'Sipariş hazırlama takibi',
-        icon: Icons.kitchen,
-        color: const Color(0xFF795548),
-        route: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const KitchenScreen()),
-        ),
-      ),
-      AdminMenuItem(
-        title: 'Kullanıcı Yönetimi',
-        subtitle: 'Personel ve yetki yönetimi',
-        icon: Icons.people,
-        color: const Color(0xFFE91E63),
-        route: () {
-          // TODO: Kullanıcı yönetimi sayfası eklenecek
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('Kullanıcı yönetimi yakında eklenecek')),
-          );
-        },
-      ),
-      AdminMenuItem(
-        title: 'Sistem Ayarları',
-        subtitle: 'Genel sistem konfigürasyonu',
-        icon: Icons.settings,
-        color: const Color(0xFF3F51B5),
-        route: () {
-          // TODO: Sistem ayarları sayfası eklenecek
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Sistem ayarları yakında eklenecek')),
-          );
-        },
-      ),
-    ];
+    final isMobile = width < 768;
 
     return Scaffold(
-      backgroundColor: AppConstants.surfaceColor,
-      appBar: AppBar(
-        backgroundColor: AppConstants.exfinRed,
-        foregroundColor: Colors.white,
-        title: const Text('Sistem Yönetimi'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications),
-            onPressed: () {
-              // TODO: Bildirimler eklenecek
-            },
-            tooltip: 'Bildirimler',
+      backgroundColor: const Color(0xFFF8FAFC),
+      body: Row(
+        children: [
+          if (!isMobile) _buildSidebar(lang),
+          Expanded(child: _buildContent(lang)),
+        ],
+      ),
+      drawer: isMobile ? Drawer(child: _buildSidebar(lang)) : null,
+    );
+  }
+
+  Widget _buildSidebar(AppLanguage lang) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      width: _sidebarCollapsed ? 64 : 260,
+      color: const Color(0xFF1E293B),
+      child: Column(
+        children: [
+          _buildSidebarHeader(lang),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              children: [
+                _buildSidebarSection('ANA MENÜ', [
+                  _SidebarItem('dashboard', Icons.dashboard_outlined, 'Dashboard'),
+                  _SidebarItem('store-management', Icons.store_outlined, 'Mağaza Yönetimi'),
+                ]),
+                _buildSidebarSection('MALZEME YÖNETİMİ', [
+                  _SidebarItem('products', Icons.inventory_2_outlined, 'Ürünler'),
+                  _SidebarItem('categories', Icons.category_outlined, 'Kategoriler'),
+                  _SidebarItem('brands', Icons.loyalty_outlined, 'Markalar'),
+                  _SidebarItem('units', Icons.straighten_outlined, 'Birimler'),
+                  _SidebarItem('stock', Icons.warehouse_outlined, 'Stok Hareketleri'),
+                  _SidebarItem('services', Icons.build_outlined, 'Hizmet Kartları'),
+                ]),
+                _buildSidebarSection('FATURALAR', [
+                  _SidebarItem('sales-invoice', Icons.receipt_long_outlined, 'Satış Faturaları'),
+                  _SidebarItem('purchase-invoice', Icons.shopping_bag_outlined, 'Alış Faturaları'),
+                  _SidebarItem('waybills', Icons.local_shipping_outlined, 'İrsaliyeler'),
+                ]),
+                _buildSidebarSection('FİNANS YÖNETİMİ', [
+                  _SidebarItem('customers', Icons.people_outline, 'Müşteriler'),
+                  _SidebarItem('suppliers', Icons.business_outlined, 'Tedarikçiler'),
+                  _SidebarItem('cash-registers', Icons.point_of_sale_outlined, 'Kasalar'),
+                  _SidebarItem('bank-accounts', Icons.account_balance_outlined, 'Banka Hesapları'),
+                  _SidebarItem('expenses', Icons.money_off_outlined, 'Gider Kartları'),
+                  _SidebarItem('currency', Icons.currency_exchange_outlined, 'Döviz Kurları'),
+                ]),
+                _buildSidebarSection('RAPORLAR & ANALİZ', [
+                  _SidebarItem('reports', Icons.analytics_outlined, 'Genel Raporlar'),
+                  _SidebarItem('profit-report', Icons.trending_up_outlined, 'Kâr Analizi'),
+                  _SidebarItem('sales-report', Icons.bar_chart_outlined, 'Satış Raporları'),
+                ]),
+                _buildSidebarSection('SİSTEM YÖNETİMİ', [
+                  _SidebarItem('users', Icons.manage_accounts_outlined, 'Kullanıcılar'),
+                  _SidebarItem('roles', Icons.security_outlined, 'Roller & Yetkiler'),
+                  _SidebarItem('firm-settings', Icons.business_center_outlined, 'Firma / Dönem'),
+                  _SidebarItem('db-settings', Icons.storage_outlined, 'Veritabanı'),
+                  _SidebarItem('printer', Icons.print_outlined, 'Yazıcı Ayarları'),
+                  _SidebarItem('audit-log', Icons.history_outlined, 'Log & Denetim'),
+                ]),
+              ],
+            ),
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+    );
+  }
+
+  Widget _buildSidebarHeader(AppLanguage lang) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFF334155))),
+      ),
+      child: Row(
+        children: [
+          if (!_sidebarCollapsed) ...[
+            const Icon(Icons.apps, color: Color(0xFF60A5FA), size: 24),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'YÖNETİM',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+          ],
+          IconButton(
+            icon: Icon(
+              _sidebarCollapsed ? Icons.chevron_right : Icons.chevron_left,
+              color: Colors.white54,
+              size: 20,
+            ),
+            onPressed: () =>
+                setState(() => _sidebarCollapsed = !_sidebarCollapsed),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSidebarSection(String title, List<_SidebarItem> items) {
+    if (_sidebarCollapsed) {
+      return Column(
+        children: items.map((item) => _buildSidebarTile(item)).toList(),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+          child: Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+            ),
+          ),
+        ),
+        ...items.map((item) => _buildSidebarTile(item)),
+      ],
+    );
+  }
+
+  Widget _buildSidebarTile(_SidebarItem item) {
+    final isActive = _currentScreen == item.id;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFF2563EB).withValues(alpha: 0.15) : null,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: ListTile(
+        dense: true,
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: _sidebarCollapsed ? 16 : 12,
+        ),
+        leading: Icon(
+          item.icon,
+          size: 18,
+          color: isActive ? const Color(0xFF60A5FA) : const Color(0xFF94A3B8),
+        ),
+        title: _sidebarCollapsed
+            ? null
+            : Text(
+                item.label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                  color: isActive ? Colors.white : const Color(0xFFCBD5E1),
+                ),
+              ),
+        onTap: () => setState(() => _currentScreen = item.id),
+      ),
+    );
+  }
+
+  Widget _buildContent(AppLanguage lang) {
+    return Column(
+      children: [
+        _buildTopBar(lang),
+        Expanded(child: _buildScreenContent()),
+      ],
+    );
+  }
+
+  Widget _buildTopBar(AppLanguage lang) {
+    return Container(
+      height: 52,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.arrow_back, size: 20),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            _getScreenTitle(),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E293B),
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.search_outlined, size: 20),
+            onPressed: () {},
+          ),
+          IconButton(
+            icon: const Icon(Icons.notifications_none_outlined, size: 20),
+            onPressed: () {},
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getScreenTitle() {
+    const titles = {
+      'dashboard': 'Dashboard',
+      'products': 'Ürün Yönetimi',
+      'categories': 'Kategoriler',
+      'brands': 'Markalar',
+      'units': 'Birimler',
+      'stock': 'Stok Hareketleri',
+      'services': 'Hizmet Kartları',
+      'sales-invoice': 'Satış Faturaları',
+      'purchase-invoice': 'Alış Faturaları',
+      'waybills': 'İrsaliyeler',
+      'customers': 'Müşteriler',
+      'suppliers': 'Tedarikçiler',
+      'cash-registers': 'Kasalar',
+      'bank-accounts': 'Banka Hesapları',
+      'expenses': 'Gider Kartları',
+      'currency': 'Döviz Kurları',
+      'reports': 'Genel Raporlar',
+      'profit-report': 'Kâr Analizi',
+      'sales-report': 'Satış Raporları',
+      'users': 'Kullanıcı Yönetimi',
+      'roles': 'Roller & Yetkiler',
+      'firm-settings': 'Firma / Dönem Tanımları',
+      'db-settings': 'Veritabanı Ayarları',
+      'printer': 'Yazıcı Ayarları',
+      'audit-log': 'Log & Denetim',
+      'store-management': 'Mağaza Yönetimi',
+    };
+    return titles[_currentScreen] ?? 'Yönetim';
+  }
+
+  Widget _buildScreenContent() {
+    switch (_currentScreen) {
+      case 'dashboard':
+        return _buildDashboardContent();
+      default:
+        return _buildPlaceholderContent();
+    }
+  }
+
+  Widget _buildDashboardContent() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Yönetim Paneli',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1E293B),
+            ),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Sistem durumu ve hızlı erişim',
+            style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+          ),
+          const SizedBox(height: 20),
+          Wrap(
+            spacing: 16,
+            runSpacing: 16,
+            children: [
+              _buildKpiCard('Toplam Ürün', '34', Icons.inventory_2,
+                  const Color(0xFF3B82F6)),
+              _buildKpiCard('Müşteriler', '11', Icons.people,
+                  const Color(0xFF10B981)),
+              _buildKpiCard('Bugün Satış', '2', Icons.receipt,
+                  const Color(0xFFF59E0B)),
+              _buildKpiCard('Aktif Masalar', '6', Icons.table_restaurant,
+                  const Color(0xFFEF4444)),
+            ],
+          ),
+          const SizedBox(height: 28),
+          const Text(
+            'Hızlı İşlemler',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF1E293B),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _buildQuickAction('Yeni Ürün', Icons.add_box_outlined,
+                  const Color(0xFF3B82F6)),
+              _buildQuickAction('Yeni Müşteri', Icons.person_add_outlined,
+                  const Color(0xFF10B981)),
+              _buildQuickAction('Stok Sayımı', Icons.inventory_outlined,
+                  const Color(0xFF8B5CF6)),
+              _buildQuickAction('Rapor Oluştur', Icons.assessment_outlined,
+                  const Color(0xFFF59E0B)),
+              _buildQuickAction('Excel İçe Aktar', Icons.upload_file_outlined,
+                  const Color(0xFF06B6D4)),
+              _buildQuickAction('Yedek Al', Icons.backup_outlined,
+                  const Color(0xFF64748B)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKpiCard(
+      String label, String value, IconData icon, Color color) {
+    return Container(
+      width: 180,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickAction(String label, IconData icon, Color color) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () {},
+      child: Container(
+        width: 140,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Başlık ve açıklama
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    AppConstants.exfinRed.withValues(alpha: 0.1),
-                    AppConstants.exfinRed.withValues(alpha: 0.05),
-                  ],
-                ),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppConstants.exfinRed.withValues(alpha: 0.2),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppConstants.exfinRed,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.admin_panel_settings,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Yönetici Paneli',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: AppConstants.textColorPrimary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Sistem yönetimi ve konfigürasyon işlemleri',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-            // Modül başlığı
-            const Text(
-              'Yönetim Modülleri',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: AppConstants.textColorPrimary,
-              ),
-            ),
-            const SizedBox(height: 16),
-            // Modül grid'i
-            Expanded(
-              child: GridView.builder(
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 16,
-                  mainAxisSpacing: 16,
-                  childAspectRatio: isMobile ? 1.1 : 1.3,
-                ),
-                itemCount: menuItems.length,
-                itemBuilder: (context, index) {
-                  final item = menuItems[index];
-                  return AdminMenuCard(item: item);
-                },
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF374151),
               ),
             ),
           ],
@@ -225,93 +421,38 @@ class AdminScreen extends ConsumerWidget {
       ),
     );
   }
-}
 
-class AdminMenuItem {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final Color color;
-  final VoidCallback route;
-
-  AdminMenuItem({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.color,
-    required this.route,
-  });
-}
-
-class AdminMenuCard extends StatelessWidget {
-  final AdminMenuItem item;
-
-  const AdminMenuCard({
-    super.key,
-    required this.item,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      elevation: 4,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: item.route,
-        child: Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                item.color.withValues(alpha: 0.1),
-                item.color.withValues(alpha: 0.05),
-              ],
+  Widget _buildPlaceholderContent() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.construction_outlined,
+              size: 48, color: Colors.grey[400]),
+          const SizedBox(height: 12),
+          Text(
+            _getScreenTitle(),
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF374151),
             ),
           ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: item.color,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  item.icon,
-                  color: Colors.white,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                item.title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: AppConstants.textColorPrimary,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                item.subtitle,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey[600],
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
+          const SizedBox(height: 6),
+          Text(
+            'Bu modül yakında eklenecek',
+            style: TextStyle(fontSize: 13, color: Colors.grey[500]),
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+class _SidebarItem {
+  final String id;
+  final IconData icon;
+  final String label;
+
+  _SidebarItem(this.id, this.icon, this.label);
 }
