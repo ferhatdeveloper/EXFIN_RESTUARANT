@@ -1,0 +1,25 @@
+# cursorroles
+
+# ... mevcut kurallar ...
+
+# TABLO/GRID KULLANIMI KURALI
+# Projedeki tüm tablo ve grid yapılarında sadece Syncfusion Flutter DataGrid kullanılmalıdır.
+# DataTable, CustomTable, veya başka herhangi bir tablo widget'ı kullanılamaz.
+# Tüm tablo işlevselliği (filtreleme, sıralama, arama, toplu seçim, dışa aktarma vb.) Syncfusion DataGrid üzerinden sağlanmalıdır.
+# Kod incelemesinde DataTable veya başka bir tablo widget'ı tespit edilirse PR reddedilir.
+# Bu kural zorunludur ve istisna yapılamaz.
+
+roles:
+  - id: SYNCFUSION_DATAGRID_MANDATORY
+    description: |
+      Tüm projede tablo/grid için sadece Syncfusion Flutter DataGrid kullanılmalıdır. DataTable veya başka bir tablo widget'ı kullanımı yasaktır. Kodda DataTable tespit edilirse PR reddedilir.
+    enforced: true
+    applies_to: [frontend, shared, features, core]
+    tags: [ui, grid, datagrid, syncfusion, zorunlu]
+    reviewer_note: |
+      Kodda DataTable, CustomTable veya başka bir tablo widget'ı tespit edilirse değişiklik kabul edilmeyecek. Sadece Syncfusion DataGrid ile tablo yapılabilir.
+description:
+globs:
+alwaysApply: false
+---
+ 
