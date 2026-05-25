@@ -449,16 +449,16 @@ class PostgresService {
 
       final results = await _connection!.query('''
         SELECT p.id, p.name, p.description, p.price, p.is_active, p.image_url, 
-               p.preparation_time, p.created_at, p.updated_at, c.name as category_name, c.id as category_id
-        FROM products p
-        LEFT JOIN categories c ON p.category_id = c.id
+               p.preparation_time, p.created_at, p.updated_at, p.category_code as category_name,
+               p.category_id, p.code, p.barcode, p.cost, p.stock, p.vat_rate, p.unit
+        FROM rex_001_products p
         WHERE p.is_active = true
         ORDER BY p.name
       ''');
 
       return results
           .map((row) => {
-                'id': row[0],
+                'id': row[0]?.toString(),
                 'name': row[1],
                 'description': row[2],
                 'price': row[3],
@@ -468,7 +468,13 @@ class PostgresService {
                 'createdAt': row[7]?.toString(),
                 'updatedAt': row[8]?.toString(),
                 'categoryName': row[9],
-                'categoryId': row[10],
+                'categoryId': row[10]?.toString(),
+                'code': row[11],
+                'barcode': row[12],
+                'cost': row[13],
+                'stock': row[14],
+                'vatRate': row[15],
+                'unit': row[16],
               })
           .toList();
     } catch (e) {
