@@ -8,11 +8,13 @@ import '../../../../core/localization/app_localizations.dart';
 import 'product_management_screen.dart';
 import 'customer_management_screen.dart';
 import 'supplier_management_screen.dart';
+import 'supplier_extract_screen.dart';
 import 'cash_register_screen.dart';
 import 'user_management_screen.dart';
 import 'role_management_screen.dart';
 import 'stock_management_screen.dart';
 import 'invoice_screen.dart';
+import 'finance_screens.dart';
 
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
@@ -310,6 +312,12 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
           invoiceType: 'return',
           title: 'İrsaliyeler / İadeler',
         );
+      case 'bank-accounts':
+        return const BankAccountsScreen();
+      case 'expenses':
+        return const ExpenseCardsScreen();
+      case 'currency':
+        return const CurrencyRatesScreen();
       default:
         return _buildPlaceholderContent();
     }
