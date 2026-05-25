@@ -1,9 +1,10 @@
 import '../../../core/base/base_viewmodel.dart';
+import '../../../services/postgres_service.dart';
 
 class ReportModel {
   final String id;
   final String title;
-  final String type; // 'sales', 'products', 'tables', 'revenue'
+  final String type;
   final DateTime startDate;
   final DateTime endDate;
   final Map<String, dynamic> data;
@@ -24,13 +25,10 @@ class ReportModel {
       id: json['id'] ?? '',
       title: json['title'] ?? '',
       type: json['type'] ?? '',
-      startDate: DateTime.parse(
-          json['start_date'] ?? DateTime.now().toIso8601String()),
-      endDate:
-          DateTime.parse(json['end_date'] ?? DateTime.now().toIso8601String()),
+      startDate: DateTime.parse(json['start_date'] ?? DateTime.now().toIso8601String()),
+      endDate: DateTime.parse(json['end_date'] ?? DateTime.now().toIso8601String()),
       data: json['data'] ?? {},
-      createdAt: DateTime.parse(
-          json['created_at'] ?? DateTime.now().toIso8601String()),
+      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
     );
   }
 
@@ -49,8 +47,7 @@ class ReportModel {
 
 class ReportsViewModel extends BaseViewModel {
   List<ReportModel> _reports = [];
-  DateTime _selectedStartDate =
-      DateTime.now().subtract(const Duration(days: 7));
+  DateTime _selectedStartDate = DateTime.now().subtract(const Duration(days: 7));
   DateTime _selectedEndDate = DateTime.now();
   String _selectedReportType = 'sales';
 
@@ -63,51 +60,89 @@ class ReportsViewModel extends BaseViewModel {
     _loadReports();
   }
 
+  double _toDouble(dynamic val) {
+    if (val == null) return 0;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString()) ?? 0;
+  }
+
+  int _toInt(dynamic val) {
+    if (val == null) return 0;
+    if (val is int) return val;
+    return int.tryParse(val.toString()) ?? 0;
+  }
+
   Future<void> _loadReports() async {
     try {
       setLoading(true);
 
-      // TODO: GraphQL ile raporları yükle
-      await Future.delayed(const Duration(milliseconds: 500));
+      final pg = PostgresService();
+      if (!pg.isConnected) await pg.initialize();
+
+      final salesData = await pg.query(
+        "SELECT COUNT(*) as cnt, COALESCE(SUM(net_amount), 0) as total, COALESCE(AVG(net_amount), 0) as avg_val FROM rex_001_01_sales WHERE is_cancelled = false AND DATE(created_at) >= CURRENT_DATE - INTERVAL '7 days'",
+      );
+
+      final topProducts = await pg.query(
+        "SELECT item_name, SUM(quantity) as qty, SUM(net_amount) as revenue FROM rex_001_01_sale_items WHERE firm_nr = '001' GROUP BY item_name ORDER BY revenue DESC LIMIT 5",
+      );
+
+      final paymentData = await pg.query(
+        "SELECT payment_method, COUNT(*) as cnt, COALESCE(SUM(net_amount), 0) as total FROM rex_001_01_sales WHERE is_cancelled = false AND DATE(created_at) >= CURRENT_DATE - INTERVAL '7 days' GROUP BY payment_method",
+      );
+
+      double totalSales = 0;
+      int totalOrders = 0;
+      double avgOrder = 0;
+      if (salesData.isNotEmpty) {
+        totalSales = _toDouble(salesData.first['total']);
+        totalOrders = _toInt(salesData.first['cnt']);
+        avgOrder = _toDouble(salesData.first['avg_val']);
+      }
+
+      double cashPayments = 0;
+      double cardPayments = 0;
+      double creditPayments = 0;
+      for (final p in paymentData) {
+        final method = p['payment_method']?.toString() ?? '';
+        final total = _toDouble(p['total']);
+        if (method == 'cash') cashPayments = total;
+        else if (method == 'card') cardPayments = total;
+        else if (method == 'credit') creditPayments = total;
+      }
+
+      final topProductsList = topProducts.map((p) => {
+        'name': p['item_name']?.toString() ?? '-',
+        'quantity': _toDouble(p['qty']),
+        'revenue': _toDouble(p['revenue']),
+      }).toList();
 
       _reports = [
         ReportModel(
-          id: 'report_1',
-          title: 'Günlük Satış Raporu',
+          id: 'report_sales',
+          title: 'Satış Raporu (Son 7 Gün)',
           type: 'sales',
-          startDate: DateTime.now().subtract(const Duration(days: 1)),
+          startDate: DateTime.now().subtract(const Duration(days: 7)),
           endDate: DateTime.now(),
           data: {
-            'total_sales': 1250.0,
-            'total_orders': 45,
-            'average_order_value': 27.78,
-            'top_products': [
-              {'name': 'Döner', 'quantity': 25, 'revenue': 625.0},
-              {'name': 'Ayran', 'quantity': 40, 'revenue': 200.0},
-              {'name': 'Künefe', 'quantity': 15, 'revenue': 225.0},
-            ],
+            'total_sales': totalSales,
+            'total_orders': totalOrders,
+            'average_order_value': avgOrder,
+            'top_products': topProductsList,
           },
           createdAt: DateTime.now(),
         ),
         ReportModel(
-          id: 'report_2',
-          title: 'Haftalık Gelir Raporu',
+          id: 'report_revenue',
+          title: 'Gelir Raporu (Son 7 Gün)',
           type: 'revenue',
           startDate: DateTime.now().subtract(const Duration(days: 7)),
           endDate: DateTime.now(),
           data: {
-            'total_revenue': 8750.0,
-            'cash_payments': 5250.0,
-            'card_payments': 3500.0,
-            'daily_revenue': [
-              {'date': '2024-01-01', 'revenue': 1200.0},
-              {'date': '2024-01-02', 'revenue': 1350.0},
-              {'date': '2024-01-03', 'revenue': 1100.0},
-              {'date': '2024-01-04', 'revenue': 1400.0},
-              {'date': '2024-01-05', 'revenue': 1600.0},
-              {'date': '2024-01-06', 'revenue': 1250.0},
-              {'date': '2024-01-07', 'revenue': 850.0},
-            ],
+            'total_revenue': totalSales,
+            'cash_payments': cashPayments,
+            'card_payments': cardPayments,
+            'credit_payments': creditPayments,
           },
           createdAt: DateTime.now(),
         ),
@@ -136,9 +171,7 @@ class ReportsViewModel extends BaseViewModel {
       String type, DateTime startDate, DateTime endDate) async {
     try {
       setLoading(true);
-
-      // TODO: GraphQL ile rapor oluştur
-      await Future.delayed(const Duration(milliseconds: 1000));
+      final data = await _generateReportData(type, startDate, endDate);
 
       final report = ReportModel(
         id: 'report_${DateTime.now().millisecondsSinceEpoch}',
@@ -146,7 +179,7 @@ class ReportsViewModel extends BaseViewModel {
         type: type,
         startDate: startDate,
         endDate: endDate,
-        data: await _generateReportData(type, startDate, endDate),
+        data: data,
         createdAt: DateTime.now(),
       );
 
@@ -161,86 +194,62 @@ class ReportsViewModel extends BaseViewModel {
     }
   }
 
+  String _getReportTypeTitle(String type) {
+    switch (type) {
+      case 'sales': return 'Satış';
+      case 'products': return 'Ürün';
+      case 'tables': return 'Masa';
+      case 'revenue': return 'Gelir';
+      case 'staff': return 'Personel';
+      default: return 'Genel';
+    }
+  }
+
   Future<Map<String, dynamic>> _generateReportData(
       String type, DateTime startDate, DateTime endDate) async {
-    // Mock data generation
+    final pg = PostgresService();
+    if (!pg.isConnected) await pg.initialize();
+
+    final startStr = startDate.toIso8601String().split('T')[0];
+    final endStr = endDate.toIso8601String().split('T')[0];
+
     switch (type) {
       case 'sales':
+        final result = await pg.query(
+          "SELECT COUNT(*) as cnt, COALESCE(SUM(net_amount), 0) as total, COALESCE(AVG(net_amount), 0) as avg_val FROM rex_001_01_sales WHERE is_cancelled = false AND DATE(created_at) >= '$startStr' AND DATE(created_at) <= '$endStr'",
+        );
         return {
-          'total_sales': 2500.0,
-          'total_orders': 85,
-          'average_order_value': 29.41,
-          'top_products': [
-            {'name': 'Döner', 'quantity': 50, 'revenue': 1250.0},
-            {'name': 'Ayran', 'quantity': 80, 'revenue': 400.0},
-            {'name': 'Künefe', 'quantity': 30, 'revenue': 450.0},
-          ],
+          'total_sales': _toDouble(result.isNotEmpty ? result.first['total'] : 0),
+          'total_orders': _toInt(result.isNotEmpty ? result.first['cnt'] : 0),
+          'average_order_value': _toDouble(result.isNotEmpty ? result.first['avg_val'] : 0),
         };
+
       case 'revenue':
-        return {
-          'total_revenue': 2500.0,
-          'cash_payments': 1500.0,
-          'card_payments': 1000.0,
-          'daily_revenue': [
-            {
-              'date': startDate.toIso8601String().split('T')[0],
-              'revenue': 1200.0
-            },
-            {
-              'date': endDate.toIso8601String().split('T')[0],
-              'revenue': 1300.0
-            },
-          ],
-        };
+        final result = await pg.query(
+          "SELECT payment_method, COALESCE(SUM(net_amount), 0) as total FROM rex_001_01_sales WHERE is_cancelled = false AND DATE(created_at) >= '$startStr' AND DATE(created_at) <= '$endStr' GROUP BY payment_method",
+        );
+        double cash = 0, card = 0, credit = 0;
+        for (final r in result) {
+          final m = r['payment_method']?.toString() ?? '';
+          final t = _toDouble(r['total']);
+          if (m == 'cash') cash = t;
+          else if (m == 'card') card = t;
+          else if (m == 'credit') credit = t;
+        }
+        return {'cash_payments': cash, 'card_payments': card, 'credit_payments': credit, 'total_revenue': cash + card + credit};
+
       case 'products':
-        return {
-          'total_products': 25,
-          'low_stock_products': 5,
-          'out_of_stock_products': 2,
-          'top_selling_products': [
-            {'name': 'Döner', 'sales_count': 50},
-            {'name': 'Ayran', 'sales_count': 80},
-            {'name': 'Künefe', 'sales_count': 30},
-          ],
-        };
-      case 'tables':
-        return {
-          'total_tables': 10,
-          'occupied_tables': 6,
-          'available_tables': 4,
-          'table_utilization': 60.0,
-          'average_table_turnover': 2.5,
-        };
+        final result = await pg.query(
+          "SELECT item_name, SUM(quantity) as qty, SUM(net_amount) as revenue FROM rex_001_01_sale_items WHERE firm_nr = '001' GROUP BY item_name ORDER BY revenue DESC LIMIT 10",
+        );
+        return {'top_products': result.map((r) => {'name': r['item_name'], 'quantity': _toDouble(r['qty']), 'revenue': _toDouble(r['revenue'])}).toList()};
+
       default:
         return {};
     }
   }
 
-  String _getReportTypeTitle(String type) {
-    switch (type) {
-      case 'sales':
-        return 'Satış';
-      case 'revenue':
-        return 'Gelir';
-      case 'products':
-        return 'Ürün';
-      case 'tables':
-        return 'Masa';
-      default:
-        return 'Genel';
-    }
-  }
-
-  List<ReportModel> getReportsByType(String type) {
-    return _reports.where((report) => report.type == type).toList();
-  }
-
-  List<ReportModel> getReportsByDateRange(
-      DateTime startDate, DateTime endDate) {
-    return _reports.where((report) {
-      return report.startDate
-              .isAfter(startDate.subtract(const Duration(days: 1))) &&
-          report.endDate.isBefore(endDate.add(const Duration(days: 1)));
-    }).toList();
+  Future<void> refreshReports() async {
+    await _loadReports();
   }
 }
