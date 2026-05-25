@@ -12,6 +12,7 @@ import 'cash_register_screen.dart';
 import 'user_management_screen.dart';
 import 'role_management_screen.dart';
 import 'stock_management_screen.dart';
+import 'invoice_screen.dart';
 
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
@@ -294,6 +295,21 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         return const RoleManagementScreen();
       case 'stock':
         return const StockManagementScreen();
+      case 'sales-invoice':
+        return const InvoiceListScreen(
+          invoiceType: 'sales',
+          title: 'Satış Faturaları',
+        );
+      case 'purchase-invoice':
+        return const InvoiceListScreen(
+          invoiceType: 'purchase',
+          title: 'Alış Faturaları',
+        );
+      case 'waybills':
+        return const InvoiceListScreen(
+          invoiceType: 'return',
+          title: 'İrsaliyeler / İadeler',
+        );
       default:
         return _buildPlaceholderContent();
     }
