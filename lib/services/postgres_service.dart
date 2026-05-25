@@ -630,12 +630,12 @@ class PostgresService {
 
       String query = '''
         SELECT 
-          o.id, o.fatura_kodu, o.table_id, o.customer_name, o.customer_phone, o.notes,
-          o.total_amount, o.discount_amount, o.final_amount,
-          o.payment_status, o.status, o.created_at, o.updated_at,
-          t.name as table_name, t.capacity as table_capacity
-        FROM orders o
-        LEFT JOIN tables t ON o.table_id = t.id
+          o.id, o.order_no, o.table_id, o.waiter, o.status,
+          o.total_amount, o.discount_amount, o.note,
+          o.payment_method, o.created_at, o.updated_at, o.opened_at, o.closed_at,
+          t.number as table_name, t.seats as table_capacity
+        FROM rest.rex_001_01_rest_orders o
+        LEFT JOIN rest.rex_001_rest_tables t ON o.table_id = t.id
         WHERE 1=1
       ''';
 
