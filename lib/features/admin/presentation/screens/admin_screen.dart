@@ -17,6 +17,7 @@ import 'invoice_screen.dart';
 import 'finance_screens.dart';
 import 'stock_and_returns_screens.dart';
 import 'master_data_screens.dart';
+import 'system_screens.dart';
 
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
@@ -335,6 +336,10 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         return const BrandManagementScreen();
       case 'units':
         return const UnitManagementScreen();
+      case 'firm-settings':
+        return const FirmPeriodScreen();
+      case 'audit-log':
+        return const AuditLogScreen();
       default:
         return _buildPlaceholderContent();
     }
