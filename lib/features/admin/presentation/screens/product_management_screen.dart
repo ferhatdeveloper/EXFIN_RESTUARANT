@@ -124,9 +124,12 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
             DataColumn(label: Text('DURUM')),
           ],
           rows: _filtered.map((p) {
-            final stock = (p['stock'] as num?)?.toDouble() ?? 0;
-            final price = (p['price'] as num?)?.toDouble() ?? 0;
-            final cost = (p['cost'] as num?)?.toDouble() ?? 0;
+            final stockRaw = p['stock'];
+            final stock = stockRaw is num ? stockRaw.toDouble() : double.tryParse(stockRaw?.toString() ?? '0') ?? 0;
+            final priceRaw = p['price'];
+            final price = priceRaw is num ? priceRaw.toDouble() : double.tryParse(priceRaw?.toString() ?? '0') ?? 0;
+            final costRaw = p['cost'];
+            final cost = costRaw is num ? costRaw.toDouble() : double.tryParse(costRaw?.toString() ?? '0') ?? 0;
             final isActive = p['isActive'] == true;
 
             return DataRow(
@@ -174,7 +177,7 @@ class _ProductManagementScreenState extends State<ProductManagementScreen> {
                   ),
                 )),
                 DataCell(Text(
-                  '${(p['vatRate'] as num?)?.toInt() ?? 0}',
+                  '${(p['vatRate'] is num ? (p['vatRate'] as num).toInt() : int.tryParse(p['vatRate']?.toString() ?? '0') ?? 0)}',
                   style: const TextStyle(fontSize: 11),
                 )),
                 DataCell(Text(

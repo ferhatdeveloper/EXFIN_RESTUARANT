@@ -79,7 +79,8 @@ class _SupplierManagementScreenState extends State<SupplierManagementScreen> {
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final s = _filtered[i];
-        final balance = (s['balance'] as num?)?.toDouble() ?? 0;
+        final balRaw = s['balance'];
+        final balance = balRaw is num ? balRaw.toDouble() : double.tryParse(balRaw?.toString() ?? '0') ?? 0;
         return ListTile(
           dense: true,
           leading: CircleAvatar(

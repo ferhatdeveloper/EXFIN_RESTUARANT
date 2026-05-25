@@ -72,7 +72,8 @@ class _CashRegisterScreenState extends State<CashRegisterScreen> {
         itemCount: _registers.length,
         itemBuilder: (context, i) {
           final r = _registers[i];
-          final balance = (r['balance'] as num?)?.toDouble() ?? 0;
+          final balRaw = r['balance'];
+          final balance = balRaw is num ? balRaw.toDouble() : double.tryParse(balRaw?.toString() ?? '0') ?? 0;
           final isActive = r['is_active'] == true;
 
           return Card(

@@ -44,12 +44,18 @@ class _StockManagementScreenState extends State<StockManagementScreen>
     }
   }
 
+  double _toDouble(dynamic val) {
+    if (val == null) return 0;
+    if (val is num) return val.toDouble();
+    return double.tryParse(val.toString()) ?? 0;
+  }
+
   @override
   Widget build(BuildContext context) {
     final totalValue = _products.fold<double>(
-        0, (sum, p) => sum + ((p['price'] as num?)?.toDouble() ?? 0) * ((p['stock'] as num?)?.toDouble() ?? 0));
-    final lowStock = _products.where((p) => ((p['stock'] as num?)?.toDouble() ?? 0) < 10 && ((p['stock'] as num?)?.toDouble() ?? 0) > 0).length;
-    final outOfStock = _products.where((p) => ((p['stock'] as num?)?.toDouble() ?? 0) <= 0).length;
+        0, (sum, p) => sum + _toDouble(p['price']) * _toDouble(p['stock']));
+    final lowStock = _products.where((p) => _toDouble(p['stock']) < 10 && _toDouble(p['stock']) > 0).length;
+    final outOfStock = _products.where((p) => _toDouble(p['stock']) <= 0).length;
 
     return Column(
       children: [
@@ -153,8 +159,8 @@ class _StockManagementScreenState extends State<StockManagementScreen>
             DataColumn(label: Text('DURUM')),
           ],
           rows: _products.map((p) {
-            final stock = (p['stock'] as num?)?.toDouble() ?? 0;
-            final cost = (p['cost'] as num?)?.toDouble() ?? 0;
+            final stock = _toDouble(p['stock']);
+            final cost = _toDouble(p['cost']);
             final value = stock * cost;
 
             String status;

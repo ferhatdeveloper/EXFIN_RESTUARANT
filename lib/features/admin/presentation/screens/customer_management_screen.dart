@@ -82,7 +82,8 @@ class _CustomerManagementScreenState extends State<CustomerManagementScreen> {
       separatorBuilder: (_, __) => const Divider(height: 1),
       itemBuilder: (context, i) {
         final c = _filtered[i];
-        final spent = (c['total_spent'] as num?)?.toDouble() ?? 0;
+        final spentRaw = c['total_spent'];
+        final spent = spentRaw is num ? spentRaw.toDouble() : double.tryParse(spentRaw?.toString() ?? '0') ?? 0;
         return ListTile(
           dense: true,
           leading: CircleAvatar(
