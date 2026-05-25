@@ -15,6 +15,7 @@ import 'role_management_screen.dart';
 import 'stock_management_screen.dart';
 import 'invoice_screen.dart';
 import 'finance_screens.dart';
+import 'stock_and_returns_screens.dart';
 
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
@@ -67,6 +68,8 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                   _SidebarItem('brands', Icons.loyalty_outlined, 'Markalar'),
                   _SidebarItem('units', Icons.straighten_outlined, 'Birimler'),
                   _SidebarItem('stock', Icons.warehouse_outlined, 'Stok Hareketleri'),
+                  _SidebarItem('stock-slips', Icons.swap_vert_outlined, 'Hareket Fişleri'),
+                  _SidebarItem('returns', Icons.assignment_return_outlined, 'İade Yönetimi'),
                   _SidebarItem('services', Icons.build_outlined, 'Hizmet Kartları'),
                 ]),
                 _buildSidebarSection('FATURALAR', [
@@ -81,6 +84,7 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
                   _SidebarItem('bank-accounts', Icons.account_balance_outlined, 'Banka Hesapları'),
                   _SidebarItem('expenses', Icons.money_off_outlined, 'Gider Kartları'),
                   _SidebarItem('currency', Icons.currency_exchange_outlined, 'Döviz Kurları'),
+                  _SidebarItem('extract', Icons.list_alt_outlined, 'Cari Ekstre'),
                 ]),
                 _buildSidebarSection('RAPORLAR & ANALİZ', [
                   _SidebarItem('reports', Icons.analytics_outlined, 'Genel Raporlar'),
@@ -318,6 +322,12 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
         return const ExpenseCardsScreen();
       case 'currency':
         return const CurrencyRatesScreen();
+      case 'extract':
+        return const SupplierExtractScreen();
+      case 'stock-slips':
+        return const StockMovementSlipsScreen();
+      case 'returns':
+        return const ReturnManagementScreen();
       default:
         return _buildPlaceholderContent();
     }
