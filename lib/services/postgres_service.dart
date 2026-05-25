@@ -46,6 +46,28 @@ class PostgresService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> query(String sql,
+      {Map<String, dynamic>? params}) async {
+    try {
+      if (!_isConnected) await initialize();
+      final results = await _connection!.query(sql,
+          substitutionValues: params);
+      return results
+          .map((row) {
+            final map = <String, dynamic>{};
+            for (int i = 0; i < row.toColumnMap().length; i++) {
+              final col = row.toColumnMap();
+              map.addAll(col);
+            }
+            return map;
+          })
+          .toList();
+    } catch (e) {
+      _logger.e('Query hatası: $e');
+      return [];
+    }
+  }
+
   Future<void> close() async {
     await _connection?.close();
     _connection = null;

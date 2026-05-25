@@ -5,6 +5,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../core/localization/app_localizations.dart';
+import 'product_management_screen.dart';
+import 'customer_management_screen.dart';
+import 'supplier_management_screen.dart';
+import 'cash_register_screen.dart';
+import 'user_management_screen.dart';
+import 'role_management_screen.dart';
+import 'stock_management_screen.dart';
 
 class AdminScreen extends ConsumerStatefulWidget {
   const AdminScreen({super.key});
@@ -273,6 +280,20 @@ class _AdminScreenState extends ConsumerState<AdminScreen> {
     switch (_currentScreen) {
       case 'dashboard':
         return _buildDashboardContent();
+      case 'products':
+        return const ProductManagementScreen();
+      case 'customers':
+        return const CustomerManagementScreen();
+      case 'suppliers':
+        return const SupplierManagementScreen();
+      case 'cash-registers':
+        return const CashRegisterScreen();
+      case 'users':
+        return const UserManagementScreen();
+      case 'roles':
+        return const RoleManagementScreen();
+      case 'stock':
+        return const StockManagementScreen();
       default:
         return _buildPlaceholderContent();
     }
