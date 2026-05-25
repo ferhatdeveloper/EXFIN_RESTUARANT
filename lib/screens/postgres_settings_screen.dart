@@ -206,6 +206,9 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
           IconButton(
             icon: const Icon(Icons.close, color: Colors.white, size: 20),
             onPressed: () => Navigator.of(context).pop(),
+            tooltip: 'Kapat',
+            iconSize: 24,
+            padding: const EdgeInsets.all(8),
           ),
         ],
       ),
