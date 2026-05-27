@@ -396,23 +396,14 @@ class _KitchenScreenState extends ConsumerState<KitchenScreen> {
   }
 
   void _moveToPreparing(String orderId) async {
-    final success = await _kitchenViewModel.moveToPreparing(orderId);
-    if (success) {
-      // Başarılı
-    }
+    await _kitchenViewModel.moveToPreparing(orderId);
   }
 
   void _moveToReady(String orderId) async {
-    final success = await _kitchenViewModel.moveToReady(orderId);
-    if (success) {
-      // Başarılı
-    }
+    await _kitchenViewModel.moveToReady(orderId);
   }
 
   void _markAsServed(String orderId) async {
-    final success = await _kitchenViewModel.markAsServed(orderId);
-    if (success) {
-      // Başarılı
-    }
+    await _kitchenViewModel.markAsServed(orderId);
   }
 }

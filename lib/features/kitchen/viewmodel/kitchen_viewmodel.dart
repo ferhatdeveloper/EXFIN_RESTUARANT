@@ -14,94 +14,111 @@ class KitchenViewModel extends BaseViewModel {
   List<dynamic> get readyOrders => _readyOrders;
 
   Future<void> initializeSignalR() async {
-    await _signalRService.initialize();
-    await _signalRService.connect();
-    await _signalRService.joinKitchenGroup();
+    try {
+      await _signalRService.initialize();
+      await _signalRService.connect();
+      await _signalRService.joinKitchenGroup();
 
-    // SignalR olaylarını dinle
-    _signalRService.onNewOrder((order) {
-      // Yeni sipariş geldiğinde listeyi yenile
-      loadOrders();
-    });
+      _signalRService.onNewOrder((order) {
+        loadOrders();
+      });
 
-    _signalRService.onOrderStatusChanged((orderId, status) {
-      // Sipariş durumu değiştiğinde listeyi yenile
-      loadOrders();
-    });
+      _signalRService.onOrderStatusChanged((orderId, status) {
+        loadOrders();
+      });
+    } catch (e) {
+      debugPrint('SignalR init error (non-blocking): $e');
+    }
   }
 
   Future<void> loadOrders() async {
     try {
       setLoading(true);
-      final postgresService = PostgresService();
-      await postgresService.initialize();
-      // Mock sipariş verileri
-      final allOrders = [
-        {
-          'id': '1',
-          'status': 'pending',
-          'items': ['Pizza', 'Cola']
-        },
-        {
-          'id': '2',
-          'status': 'preparing',
-          'items': ['Burger', 'Fries']
-        },
-        {
-          'id': '3',
-          'status': 'ready',
-          'items': ['Salad', 'Water']
-        },
-      ];
+      final pg = PostgresService();
+      if (!pg.isConnected) await pg.initialize();
 
-      // Siparişleri durumlarına göre ayır
-      _pendingOrders =
-          allOrders.where((order) => order['status'] == 'pending').toList();
-      _preparingOrders =
-          allOrders.where((order) => order['status'] == 'preparing').toList();
-      _readyOrders =
-          allOrders.where((order) => order['status'] == 'ready').toList();
+      final results = await pg.query('''
+        SELECT ko.id, ko.order_id, ko.table_number, ko.floor_name, ko.waiter,
+               ko.status, ko.note, ko.sent_at,
+               ki.product_name, ki.quantity, ki.status as item_status
+        FROM rest.rex_001_01_rest_kitchen_orders ko
+        LEFT JOIN rest.rex_001_01_rest_kitchen_items ki ON ki.kitchen_order_id = ko.id
+        ORDER BY ko.sent_at DESC
+      ''');
 
+      final Map<String, Map<String, dynamic>> orderMap = {};
+      for (final row in results) {
+        final orderId = row['id']?.toString() ?? '';
+        if (!orderMap.containsKey(orderId)) {
+          orderMap[orderId] = {
+            'id': orderId,
+            'orderId': row['order_id']?.toString(),
+            'tableNumber': row['table_number']?.toString() ?? '?',
+            'floorName': row['floor_name']?.toString() ?? '',
+            'waiter': row['waiter']?.toString() ?? '',
+            'status': row['status']?.toString() ?? 'new',
+            'note': row['note']?.toString(),
+            'sentAt': row['sent_at']?.toString(),
+            'items': <String>[],
+          };
+        }
+        if (row['product_name'] != null) {
+          final qty = row['quantity'] ?? 1;
+          (orderMap[orderId]!['items'] as List<String>)
+              .add('${row['product_name']} x$qty');
+        }
+      }
+
+      final allOrders = orderMap.values.toList();
+
+      _pendingOrders = allOrders
+          .where((o) => o['status'] == 'new')
+          .toList();
+      _preparingOrders = allOrders
+          .where((o) => o['status'] == 'preparing' || o['status'] == 'cooking')
+          .toList();
+      _readyOrders = allOrders
+          .where((o) => o['status'] == 'ready' || o['status'] == 'served')
+          .toList();
+
+      setLoading(false);
       notifyListeners();
     } catch (e) {
-      setError('Siparişler yüklenirken hata oluştu: $e');
-    } finally {
+      debugPrint('Kitchen loadOrders error: $e');
       setLoading(false);
     }
   }
 
-  Future<bool> updateOrderStatus(String orderId, String status) async {
+  Future<void> updateOrderStatus(String orderId, String newStatus) async {
     try {
-      setLoading(true);
-      final postgresService = PostgresService();
-      await postgresService.initialize();
-      // Mock sipariş güncelleme
-      debugPrint('Sipariş durumu güncellendi: $orderId -> $status');
-      await loadOrders(); // Listeyi yenile
-      return true;
+      final pg = PostgresService();
+      if (!pg.isConnected) await pg.initialize();
+
+      await pg.query(
+        "UPDATE rest.rex_001_01_rest_kitchen_orders SET status = @status WHERE id = @id::uuid",
+        params: {'status': newStatus, 'id': orderId},
+      );
+
+      await loadOrders();
     } catch (e) {
-      setError('Sipariş durumu güncellenirken hata oluştu: $e');
-      return false;
-    } finally {
-      setLoading(false);
+      debugPrint('Kitchen updateStatus error: $e');
     }
   }
 
-  Future<bool> moveToPreparing(String orderId) async {
-    return await updateOrderStatus(orderId, 'preparing');
+  Future<void> moveToPreparing(String orderId) async {
+    await updateOrderStatus(orderId, 'preparing');
   }
 
-  Future<bool> moveToReady(String orderId) async {
-    return await updateOrderStatus(orderId, 'ready');
+  Future<void> moveToReady(String orderId) async {
+    await updateOrderStatus(orderId, 'ready');
   }
 
-  Future<bool> markAsServed(String orderId) async {
-    return await updateOrderStatus(orderId, 'served');
+  Future<void> markAsServed(String orderId) async {
+    await updateOrderStatus(orderId, 'served');
   }
 
   @override
   void dispose() {
-    _signalRService.disconnect();
     super.dispose();
   }
 }
