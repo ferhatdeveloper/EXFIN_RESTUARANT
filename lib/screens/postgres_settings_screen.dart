@@ -6,6 +6,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:go_router/go_router.dart';
 import '../services/postgres_service.dart';
 
 enum ConnectionMode { online, hybrid, offline }
@@ -96,7 +97,15 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
         margin: const EdgeInsets.all(16),
       ),
     );
-    Navigator.of(context).pop();
+    _closeScreen();
+  }
+
+  void _closeScreen() {
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    } else {
+      context.go('/login');
+    }
   }
 
   @override
@@ -205,7 +214,7 @@ class _PostgresSettingsScreenState extends State<PostgresSettingsScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.close, color: Colors.white, size: 20),
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: _closeScreen,
             tooltip: 'Kapat',
             iconSize: 24,
             padding: const EdgeInsets.all(8),
