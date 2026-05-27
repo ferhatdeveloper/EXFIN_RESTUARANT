@@ -21,6 +21,13 @@ class PostgresService {
   String get _password => dotenv.env['PG_PASSWORD'] ?? 'Yq7xwQpt6c';
   String get _firmNr => dotenv.env['FIRM_NR'] ?? '001';
 
+  int _toSafeInt(dynamic val) {
+    if (val == null) return 0;
+    if (val is int) return val;
+    if (val is num) return val.toInt();
+    return int.tryParse(val.toString()) ?? 0;
+  }
+
   Future<bool> initialize() async {
     try {
       if (_isConnected && _connection != null) return true;
@@ -567,7 +574,7 @@ class PostgresService {
         'orderStatus': orderStatus,
       });
 
-      final orderId = orderResult.first[0] as int;
+      final orderId = (_toSafeInt(orderResult.first[0]));
       final returnedFaturaKodu = orderResult.first[1] as String;
 
       // Sipariş kalemlerini ekle
@@ -896,7 +903,7 @@ class PostgresService {
         SELECT COUNT(*) FROM orders 
         WHERE DATE(created_at) = CURRENT_DATE
       ''');
-      final todayOrders = todayOrdersResult.first[0] as int;
+      final todayOrders = (_toSafeInt(todayOrdersResult.first[0]));
 
       // Bugünkü toplam gelir
       final todayRevenueResult = await _connection!.query('''
@@ -910,14 +917,14 @@ class PostgresService {
         SELECT COUNT(*) FROM orders 
         WHERE order_status = 'active'
       ''');
-      final pendingOrders = pendingOrdersResult.first[0] as int;
+      final pendingOrders = (_toSafeInt(pendingOrdersResult.first[0]));
 
       // Ödenmemiş sipariş sayısı
       final unpaidOrdersResult = await _connection!.query('''
         SELECT COUNT(*) FROM orders 
         WHERE payment_status = 'pending'
       ''');
-      final unpaidOrders = unpaidOrdersResult.first[0] as int;
+      final unpaidOrders = (_toSafeInt(unpaidOrdersResult.first[0]));
 
       // Ortalama sipariş tutarı
       final avgOrderAmountResult = await _connection!.query('''
@@ -1081,40 +1088,40 @@ class PostgresService {
       final totalTablesResult = await _connection!.query('''
         SELECT COUNT(*) FROM tables WHERE is_active = true
       ''');
-      final totalTables = totalTablesResult.first[0] as int;
+      final totalTables = (_toSafeInt(totalTablesResult.first[0]));
 
       // Müsait masa sayısı
       final availableTablesResult = await _connection!.query('''
         SELECT COUNT(*) FROM tables 
         WHERE is_active = true AND status = 'Available'
       ''');
-      final availableTables = availableTablesResult.first[0] as int;
+      final availableTables = (_toSafeInt(availableTablesResult.first[0]));
 
       // Dolu masa sayısı
       final occupiedTablesResult = await _connection!.query('''
         SELECT COUNT(*) FROM tables 
         WHERE is_active = true AND status = 'occupied'
       ''');
-      final occupiedTables = occupiedTablesResult.first[0] as int;
+      final occupiedTables = (_toSafeInt(occupiedTablesResult.first[0]));
 
       // Toplam bölge sayısı
       final totalRegionsResult = await _connection!.query('''
         SELECT COUNT(*) FROM regions WHERE is_active = true
       ''');
-      final totalRegions = totalRegionsResult.first[0] as int;
+      final totalRegions = (_toSafeInt(totalRegionsResult.first[0]));
 
       // Toplam ürün sayısı
       final totalProductsResult = await _connection!.query('''
         SELECT COUNT(*) FROM products WHERE is_active = true
       ''');
-      final totalProducts = totalProductsResult.first[0] as int;
+      final totalProducts = (_toSafeInt(totalProductsResult.first[0]));
 
       // Toplam sipariş sayısı (bugün)
       final todayOrdersResult = await _connection!.query('''
         SELECT COUNT(*) FROM orders 
         WHERE DATE(created_at) = CURRENT_DATE
       ''');
-      final todayOrders = todayOrdersResult.first[0] as int;
+      final todayOrders = (_toSafeInt(todayOrdersResult.first[0]));
 
       // Bugünkü toplam gelir
       final todayRevenueResult = await _connection!.query('''
