@@ -48,8 +48,8 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
   int selectedRegionIndex = 0;
   String selectedStatus = 'all';
   bool isMobile = false;
-  Map<int, AnimationController> _pulseControllers = {};
-  Map<int, Animation<double>> _pulseAnimations = {};
+  Map<String, AnimationController> _pulseControllers = {};
+  Map<String, Animation<double>> _pulseAnimations = {};
 
   final List<String> durumlar = [
     "all",
@@ -106,22 +106,11 @@ class _TablesScreenState extends ConsumerState<TablesScreen>
     }
   }
 
-  int _getTableId(dynamic table) {
-    // tableId'yi güvenli şekilde int'e çevir
-    if (table['id'] is int) {
-      return table['id'] as int;
-    } else if (table['id'] is String) {
-      return int.tryParse(table['id'] as String) ?? 0;
-    } else if (table['number'] is int) {
-      return table['number'] as int;
-    } else if (table['number'] is String) {
-      return int.tryParse(table['number'] as String) ?? 0;
-    } else {
-      return 0;
-    }
+  String _getTableId(dynamic table) {
+    return table['id']?.toString() ?? '0';
   }
 
-  void _triggerPulseAnimation(int tableId) {
+  void _triggerPulseAnimation(String tableId) {
     if (_pulseControllers.containsKey(tableId)) {
       _pulseControllers[tableId]!.reset();
       _pulseControllers[tableId]!.repeat();
